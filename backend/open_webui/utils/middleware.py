@@ -3470,6 +3470,17 @@ async def streaming_chat_response_handler(response, ctx):
 
         # Handle as a background task
         async def response_handler(response, events):
+            await event_emitter(
+                {
+                    'type': 'status',
+                    'data': {
+                        'action': 'assistant_response',
+                        'description': 'Hermes is responding',
+                        'done': False,
+                    },
+                }
+            )
+
             def tag_output_handler(content_type, tags, output):
                 """
                 Detect special tags (reasoning, solution, code_interpreter) in streaming
@@ -3793,12 +3804,18 @@ async def streaming_chat_response_handler(response, ctx):
                             delta_count = 0
                             last_delta_data = None
 
+                    current_sse_event = None
+
                     async for line in response.body_iterator:
                         line = line.decode('utf-8', 'replace') if isinstance(line, bytes) else line
                         data = line
 
-                        # Skip empty lines
                         if not data.strip():
+                            continue
+
+                        # Capture custom SSE event types (for example hermes.tool.progress)
+                        if data.startswith('event:'):
+                            current_sse_event = data[len('event:') :].strip() or None
                             continue
 
                         # "data:" is the prefix for each event
@@ -3810,6 +3827,24 @@ async def streaming_chat_response_handler(response, ctx):
 
                         try:
                             data = json.loads(data)
+
+                            if current_sse_event == 'hermes.tool.progress':
+                                description = data.get('label') or data.get('tool') or 'Hermes is working'
+                                emoji = data.get('emoji') or ''
+                                if emoji:
+                                    description = f"{emoji} {description}"
+                                await event_emitter(
+                                    {
+                                        'type': 'status',
+                                        'data': {
+                                            'action': data.get('tool', 'tool_progress'),
+                                            'description': description,
+                                            'done': False,
+                                        },
+                                    }
+                                )
+                                current_sse_event = None
+                                continue
 
                             data, _ = await process_filter_functions(
                                 request=request,
