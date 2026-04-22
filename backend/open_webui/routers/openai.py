@@ -34,6 +34,7 @@ from open_webui.config import (
 )
 from open_webui.env import (
     MODELS_CACHE_TTL,
+    AIOHTTP_CLIENT_SESSION_SSL,
     AIOHTTP_CLIENT_TIMEOUT,
     AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST,
     ENABLE_FORWARD_USER_INFO_HEADERS,
