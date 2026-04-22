@@ -34,11 +34,9 @@ from open_webui.config import (
 )
 from open_webui.env import (
     MODELS_CACHE_TTL,
-    AIOHTTP_CLIENT_SESSION_SSL,
     AIOHTTP_CLIENT_TIMEOUT,
     AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST,
     ENABLE_FORWARD_USER_INFO_HEADERS,
-    FORWARD_SESSION_INFO_HEADER_CHAT_ID,
     BYPASS_MODEL_ACCESS_CONTROL,
     ENABLE_OPENAI_API_PASSTHROUGH,
 )
@@ -62,7 +60,7 @@ from open_webui.utils.session_pool import (
 )
 
 from open_webui.utils.auth import get_admin_user, get_verified_user
-from open_webui.utils.headers import include_user_info_headers
+from open_webui.utils.headers import include_session_info_headers, include_user_info_headers
 from open_webui.utils.anthropic import is_anthropic_url, get_anthropic_models
 
 log = logging.getLogger(__name__)
@@ -167,8 +165,8 @@ async def get_headers_and_cookies(
 
     if ENABLE_FORWARD_USER_INFO_HEADERS and user:
         headers = include_user_info_headers(headers, user)
-        if metadata and metadata.get('chat_id'):
-            headers[FORWARD_SESSION_INFO_HEADER_CHAT_ID] = metadata.get('chat_id')
+
+    headers = include_session_info_headers(headers, metadata, url=url, config=config)
 
     token = None
     auth_type = config.get('auth_type')
