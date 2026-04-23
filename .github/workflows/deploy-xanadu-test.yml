@@ -1,5 +1,8 @@
-name: deploy-xanadu-test
+name: deploy-xanadu-test (TESTING ONLY)
 
+# Isolated Open WebUI test deployment for Gavin.
+# Pushes to `testing` deploy to https://chat-test.yxanadu.com.
+# Do not use this workflow for production; production is `deploy-xanadu` on `main`.
 on:
   push:
     branches:
