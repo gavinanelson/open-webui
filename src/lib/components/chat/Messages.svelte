@@ -19,6 +19,14 @@
 	import Message from './Messages/Message.svelte';
 	import Loader from '../common/Loader.svelte';
 	import Spinner from '../common/Spinner.svelte';
+	import {
+		buildRootMessageIds,
+		buildVirtualizationLayout,
+		computeVisibleRange,
+		reconcileMessageHeights,
+		resolveBranchTargetId,
+		updateMessageHeight
+	} from './virtualization';
 
 	import ChatPlaceholder from './ChatPlaceholder.svelte';
 
@@ -59,9 +67,11 @@
 
 	export let messagesCount: number | null = 8;
 	let messagesLoading = false;
+	let rootMessageIds: string[] = [];
 
-	// Off-screen message unloading. Heights are measured on scroll so spacers
-	// always match real sizes — no scroll jumps, no feedback loops needed.
+	// Off-screen message unloading. Heights are tracked per message, and the
+	// visible window is derived from cached layout data instead of scroll-time
+	// DOM measurement.
 	const OVERSCAN = 3;
 	const DEFAULT_HEIGHT = 150;
 	let visibleStart = 0;
@@ -70,63 +80,57 @@
 	let topSpacerHeight = 0;
 	let bottomSpacerHeight = 0;
 	let pendingCull = null;
+	let pendingVirtualizationRefresh = null;
+	let virtualizationLayout = {
+		messageIds: [],
+		prefixSums: [0],
+		firstUnmeasuredIndex: 0
+	};
 
-	// Helper: get height for a message (cached or default)
 	const heightOf = (id) => messageHeights.get(id) ?? DEFAULT_HEIGHT;
 
-	/** Measure all currently rendered message elements and cache their heights */
-	const measureMessageHeights = () => {
-		const elements = document
-			.getElementById('messages-container')
-			?.querySelectorAll('[role="listitem"]');
-		if (!elements) return;
-
-		messageHeights = new Map([
-			...messageHeights,
-			...Array.from(elements)
-				.map((el, i) => [messages[visibleStart + i]?.id, el.getBoundingClientRect().height])
-				.filter(([id]) => id != null)
-		]);
+	const refreshVirtualization = () => {
+		virtualizationLayout = buildVirtualizationLayout({
+			messageIds: messages.map((message) => message.id),
+			heightOf,
+			hasMeasured: (id) => messageHeights.has(id)
+		});
+		updateVisibleRange();
 	};
 
-	/** Compute visible range from current scroll position and apply */
+	const scheduleVirtualizationRefresh = () => {
+		if (pendingVirtualizationRefresh) return;
+
+		pendingVirtualizationRefresh = requestAnimationFrame(() => {
+			pendingVirtualizationRefresh = null;
+			refreshVirtualization();
+		});
+	};
+
 	const updateVisibleRange = () => {
 		const container = document.getElementById('messages-container');
-		if (!container || messages.length === 0) return;
+		if (!container || messages.length === 0) {
+			visibleStart = 0;
+			visibleEnd = messages.length;
+			topSpacerHeight = 0;
+			bottomSpacerHeight = 0;
+			return;
+		}
 
-		const st = container.scrollTop;
-		const ch = container.clientHeight;
+		const range = computeVisibleRange({
+			layout: virtualizationLayout,
+			scrollTop: container.scrollTop,
+			clientHeight: container.clientHeight,
+			overscan: OVERSCAN
+		});
 
-		// Build prefix sums from measured heights
-		const prefixSums = messages.reduce(
-			(acc, m) => [...acc, acc[acc.length - 1] + heightOf(m.id)],
-			[0]
-		);
-
-		const firstVisible = Math.max(0, prefixSums.findIndex((h) => h > st) - 1);
-		const lastVisible = prefixSums.findIndex((h) => h > st + ch);
-
-		// Only cull messages that have been measured (so spacer height is accurate)
-		// findIndex returns -1 when all are measured → no limit on culling
-		const firstUnmeasured = messages.findIndex((m) => !messageHeights.has(m.id));
-		const cullLimit = firstUnmeasured === -1 ? messages.length : firstUnmeasured;
-
-		visibleStart = Math.max(0, Math.min(firstVisible - OVERSCAN, cullLimit));
-		visibleEnd = Math.min(
-			messages.length,
-			(lastVisible === -1 ? messages.length : lastVisible) + OVERSCAN
-		);
-		topSpacerHeight = prefixSums[visibleStart] ?? 0;
-		bottomSpacerHeight = (prefixSums[messages.length] ?? 0) - (prefixSums[visibleEnd] ?? 0);
+		visibleStart = range.visibleStart;
+		visibleEnd = range.visibleEnd;
+		topSpacerHeight = range.topSpacerHeight;
+		bottomSpacerHeight = range.bottomSpacerHeight;
 	};
 
-	/** Scroll handler: measure every frame, cull via rAF (same throttle as pendingRebuild) */
 	const handleContainerScroll = () => {
-		measureMessageHeights();
-
-		// Don't cull during progressive loading
-		if (messagesLoading) return;
-
 		if (!pendingCull) {
 			pendingCull = requestAnimationFrame(() => {
 				pendingCull = null;
@@ -148,6 +152,7 @@
 
 	onMount(() => {
 		attachScrollListener();
+		scheduleVirtualizationRefresh();
 	});
 
 	onDestroy(() => {
@@ -157,36 +162,42 @@
 		}
 		cancelAnimationFrame(pendingCull);
 		cancelAnimationFrame(pendingRebuild);
+		cancelAnimationFrame(pendingVirtualizationRefresh);
 	});
 
 	const loadMoreMessages = async () => {
-		// scroll slightly down to disable continuous loading
 		const element = document.getElementById('messages-container');
-		element.scrollTop = element.scrollTop + 100;
+		const previousScrollTop = element?.scrollTop ?? 0;
+		const previousScrollHeight = element?.scrollHeight ?? 0;
 
 		messagesLoading = true;
 		messagesCount += 8;
 
 		buildMessages();
-
-		// Show all messages during progressive loading (no culling)
-		visibleStart = 0;
-		visibleEnd = messages.length;
-		topSpacerHeight = 0;
-		bottomSpacerHeight = 0;
+		cancelAnimationFrame(pendingVirtualizationRefresh);
+		pendingVirtualizationRefresh = null;
 
 		await tick();
+		refreshVirtualization();
+		await tick();
+
+		if (element) {
+			element.scrollTop = previousScrollTop + (element.scrollHeight - previousScrollHeight);
+			updateVisibleRange();
+		}
 
 		messagesLoading = false;
 	};
 
 	let pendingRebuild = null;
 	let lastCurrentId = null;
+	let lastRootIdsMessageCount = -1;
 
 	const buildMessages = () => {
 		let _messages = [];
+		const historyMessages = history.messages ?? {};
 
-		let message = history.messages[history.currentId];
+		let message = historyMessages[history.currentId];
 		const visitedMessageIds = new Set();
 
 		while (message && (messagesCount !== null ? _messages.length <= messagesCount : true)) {
@@ -197,11 +208,21 @@
 			visitedMessageIds.add(message.id);
 
 			_messages.push(message);
-			message = message.parentId !== null ? history.messages[message.parentId] : null;
+			message = message.parentId !== null ? historyMessages[message.parentId] : null;
 		}
 
 		messages = _messages.reverse();
-		visibleEnd = messages.length;
+		messageHeights = reconcileMessageHeights({
+			messageIds: messages.map((entry) => entry.id),
+			existingHeights: messageHeights,
+			defaultHeight: DEFAULT_HEIGHT
+		});
+		const historyMessageCount = Object.keys(historyMessages).length;
+		if (historyMessageCount !== lastRootIdsMessageCount) {
+			rootMessageIds = buildRootMessageIds(historyMessages);
+			lastRootIdsMessageCount = historyMessageCount;
+		}
+		scheduleVirtualizationRefresh();
 	};
 
 	// Throttle message list rebuilds to once per animation frame during streaming.
@@ -209,6 +230,9 @@
 	const handleHistoryChange = (currentId, _messages) => {
 		if (!currentId) {
 			messages = [];
+			rootMessageIds = [];
+			lastRootIdsMessageCount = 0;
+			scheduleVirtualizationRefresh();
 			return;
 		}
 
@@ -216,14 +240,10 @@
 		lastCurrentId = currentId;
 
 		if (currentIdChanged) {
-			// Structural change: new chat, navigation, new message — rebuild immediately
 			cancelAnimationFrame(pendingRebuild);
 			pendingRebuild = null;
 			buildMessages();
-			// No explicit culling needed — scrollToBottom will fire a scroll event,
-			// which triggers handleContainerScroll → rAF → updateVisibleRange
 		} else if (_messages) {
-			// Content update (streaming) — throttle to once per frame
 			if (!pendingRebuild) {
 				pendingRebuild = requestAnimationFrame(() => {
 					pendingRebuild = null;
@@ -247,6 +267,16 @@
 		element.scrollTop = element.scrollHeight;
 	};
 
+	const handleMessageHeightChange = (event) => {
+		const { messageId, height } = event.detail ?? {};
+		if (!messageId || typeof height !== 'number') {
+			return;
+		}
+
+		messageHeights = updateMessageHeight(messageHeights, messageId, height);
+		scheduleVirtualizationRefresh();
+	};
+
 	const updateChat = async () => {
 		if (!$temporaryChatEnabled) {
 			history = history;
@@ -261,31 +291,12 @@
 		}
 	};
 
-	const gotoMessage = async (message, idx) => {
-		// Determine the correct sibling list (either parent's children or root messages)
-		let siblings;
-		if (message.parentId !== null) {
-			siblings = history.messages[message.parentId].childrenIds;
-		} else {
-			siblings = Object.values(history.messages)
-				.filter((msg) => msg.parentId === null)
-				.map((msg) => msg.id);
-		}
-
-		// Clamp index to a valid range
-		idx = Math.max(0, Math.min(idx, siblings.length - 1));
-
-		let messageId = siblings[idx];
+	const gotoMessage = async (message: { id: string; parentId: string | null }, idx: number) => {
+		const historyMessages = history.messages ?? {};
+		const messageId = resolveBranchTargetId(message, idx, historyMessages, rootMessageIds);
 
 		// If we're navigating to a different message
 		if (message.id !== messageId) {
-			// Drill down to the deepest child of that branch
-			let messageChildrenIds = history.messages[messageId].childrenIds;
-			while (messageChildrenIds.length !== 0) {
-				messageId = messageChildrenIds.at(-1);
-				messageChildrenIds = history.messages[messageId].childrenIds;
-			}
-
 			history.currentId = messageId;
 		}
 
@@ -302,39 +313,19 @@
 		}
 	};
 
-	const showPreviousMessage = async (message) => {
-		if (message.parentId !== null) {
-			let messageId =
-				history.messages[message.parentId].childrenIds[
-					Math.max(history.messages[message.parentId].childrenIds.indexOf(message.id) - 1, 0)
-				];
+	const showPreviousMessage = async (message: { id: string; parentId: string | null }) => {
+		const historyMessages = history.messages ?? {};
+		const messageId = resolveBranchTargetId(
+			message,
+			message.parentId !== null
+				? Math.max(historyMessages[message.parentId].childrenIds.indexOf(message.id) - 1, 0)
+				: Math.max(rootMessageIds.indexOf(message.id) - 1, 0),
+			historyMessages,
+			rootMessageIds
+		);
 
-			if (message.id !== messageId) {
-				let messageChildrenIds = history.messages[messageId].childrenIds;
-
-				while (messageChildrenIds.length !== 0) {
-					messageId = messageChildrenIds.at(-1);
-					messageChildrenIds = history.messages[messageId].childrenIds;
-				}
-
-				history.currentId = messageId;
-			}
-		} else {
-			let childrenIds = Object.values(history.messages)
-				.filter((message) => message.parentId === null)
-				.map((message) => message.id);
-			let messageId = childrenIds[Math.max(childrenIds.indexOf(message.id) - 1, 0)];
-
-			if (message.id !== messageId) {
-				let messageChildrenIds = history.messages[messageId].childrenIds;
-
-				while (messageChildrenIds.length !== 0) {
-					messageId = messageChildrenIds.at(-1);
-					messageChildrenIds = history.messages[messageId].childrenIds;
-				}
-
-				history.currentId = messageId;
-			}
+		if (message.id !== messageId) {
+			history.currentId = messageId;
 		}
 
 		await tick();
@@ -349,43 +340,22 @@
 		}
 	};
 
-	const showNextMessage = async (message) => {
-		if (message.parentId !== null) {
-			let messageId =
-				history.messages[message.parentId].childrenIds[
-					Math.min(
-						history.messages[message.parentId].childrenIds.indexOf(message.id) + 1,
-						history.messages[message.parentId].childrenIds.length - 1
+	const showNextMessage = async (message: { id: string; parentId: string | null }) => {
+		const historyMessages = history.messages ?? {};
+		const messageId = resolveBranchTargetId(
+			message,
+			message.parentId !== null
+				? Math.min(
+						historyMessages[message.parentId].childrenIds.indexOf(message.id) + 1,
+						historyMessages[message.parentId].childrenIds.length - 1
 					)
-				];
+				: Math.min(rootMessageIds.indexOf(message.id) + 1, rootMessageIds.length - 1),
+			historyMessages,
+			rootMessageIds
+		);
 
-			if (message.id !== messageId) {
-				let messageChildrenIds = history.messages[messageId].childrenIds;
-
-				while (messageChildrenIds.length !== 0) {
-					messageId = messageChildrenIds.at(-1);
-					messageChildrenIds = history.messages[messageId].childrenIds;
-				}
-
-				history.currentId = messageId;
-			}
-		} else {
-			let childrenIds = Object.values(history.messages)
-				.filter((message) => message.parentId === null)
-				.map((message) => message.id);
-			let messageId =
-				childrenIds[Math.min(childrenIds.indexOf(message.id) + 1, childrenIds.length - 1)];
-
-			if (message.id !== messageId) {
-				let messageChildrenIds = history.messages[messageId].childrenIds;
-
-				while (messageChildrenIds.length !== 0) {
-					messageId = messageChildrenIds.at(-1);
-					messageChildrenIds = history.messages[messageId].childrenIds;
-				}
-
-				history.currentId = messageId;
-			}
+		if (message.id !== messageId) {
+			history.currentId = messageId;
 		}
 
 		await tick();
@@ -581,8 +551,10 @@
 								{chatId}
 								bind:history
 								{selectedModels}
+								{visibilityMode}
 								messageId={message.id}
 								idx={messageIdx}
+								{rootMessageIds}
 								{user}
 								{setInputText}
 								{gotoMessage}
@@ -603,6 +575,7 @@
 								{readOnly}
 								{editCodeBlock}
 								{topPadding}
+								on:heightchange={handleMessageHeightChange}
 							/>
 						{/each}
 

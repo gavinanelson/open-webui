@@ -129,6 +129,23 @@ def get_content_from_message(message: dict) -> Optional[str]:
     return None
 
 
+def should_emit_stream_content_snapshot(
+    *,
+    enable_realtime_chat_save: bool,
+    has_reasoning_content: bool,
+    detect_reasoning_tags: bool,
+    detect_code_interpreter: bool,
+    inside_tag_block: bool,
+) -> bool:
+    return (
+        enable_realtime_chat_save
+        or has_reasoning_content
+        or detect_reasoning_tags
+        or detect_code_interpreter
+        or inside_tag_block
+    )
+
+
 def convert_output_to_messages(output: list, raw: bool = False) -> list[dict]:
     """
     Convert OR-aligned output items to OpenAI Chat Completion-format messages.

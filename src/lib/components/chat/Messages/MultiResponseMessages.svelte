@@ -19,7 +19,6 @@
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
 	import ProfileImage from './ProfileImage.svelte';
 	import { WEBUI_BASE_URL } from '$lib/constants';
-	import equal from 'fast-deep-equal';
 	const i18n = getContext('i18n');
 	dayjs.extend(localizedFormat);
 
@@ -61,15 +60,11 @@
 
 	let selectedModelIdx = null;
 
-	let message = structuredClone(history.messages[messageId]);
+	let message = history.messages[messageId];
 	$: if (history.messages) {
 		const source = history.messages[messageId];
 		if (source) {
-			if (message.content !== source.content || message.done !== source.done) {
-				message = structuredClone(source);
-			} else if (!equal(message, source)) {
-				message = structuredClone(source);
-			}
+			message = source;
 		}
 	}
 
