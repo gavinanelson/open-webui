@@ -95,7 +95,7 @@ The live `chat.yxanadu.com` app is now auto-deployed from Gavin's fork branch vi
 - app version: `{version}`
 
 ## Deployment method
-A repository self-hosted GitHub Actions runner on `xanadu-host` rebuilds and redeploys Open WebUI on pushes to `main` or `master`.
+A repository self-hosted GitHub Actions runner on `xanadu-host` rebuilds and redeploys production Open WebUI on pushes to `main`.
 
 - runner name: `xanadu-host-open-webui-deploy`
 - workflow: `.github/workflows/deploy-xanadu.yml`
