@@ -25,6 +25,7 @@ This repository has two Xanadu deployments. Do not confuse them.
 - Both stacks intentionally use the real Hermes API backends on ports `8642` and `8652`, so testing exercises the actual Hermes agent harness without touching Gavin's production Open WebUI chat/session data.
 - Deployment triggers are branch-locked: production redeploys only when `main` is pushed; testing redeploys only when `testing` is pushed. Do not add broad push triggers, manual deploy triggers, or shared deploy concurrency groups that could make one branch interrupt the other.
 - GitHub environment branch policies mirror this: `xanadu-production` allows only `main`, and `xanadu-testing` allows only `testing`.
+- Testing deploys must not do heavy Docker builds on `xanadu-host`. The test workflow builds/pushes the image off-host to GHCR first, then the self-hosted job only pulls and recreates the isolated test containers. Do not move the test image build back onto the Xanadu self-hosted runner; local Docker builds have caused production `chat.yxanadu.com` backend restarts/Cloudflare 502s.
 
 ## Recommended workflow
 
