@@ -46,6 +46,16 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+storage_maintenance() {
+  local phase="$1"
+  local helper="/Users/gavin/xanadu-storage/scripts/docker-storage-maintenance.sh"
+  if [[ -x "$helper" ]]; then
+    "$helper" "$phase" open-webui-deploy
+  fi
+}
+
+storage_maintenance preflight
+
 echo "Building $IMAGE_NAME:$SHORT_SHA and $IMAGE_NAME:$IMAGE_TAG from $BRANCH_NAME @ $SHORT_SHA"
 docker build -t "$IMAGE_NAME:$SHORT_SHA" -t "$IMAGE_NAME:$IMAGE_TAG" "$REPO_ROOT"
 
@@ -145,5 +155,7 @@ check_url "http://127.0.0.1:3013/" "200"
 check_url "http://127.0.0.1:3012/" "200"
 check_url "https://chat.yxanadu.com/" "200"
 check_url "https://chat.yxanadu.com/api/version" "200"
+
+storage_maintenance postdeploy
 
 echo "Deploy complete: $FULL_SHA"

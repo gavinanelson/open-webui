@@ -55,6 +55,16 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+storage_maintenance() {
+  local phase="$1"
+  local helper="/Users/gavin/xanadu-storage/scripts/docker-storage-maintenance.sh"
+  if [[ -x "$helper" ]]; then
+    "$helper" "$phase" open-webui-test-deploy
+  fi
+}
+
+storage_maintenance preflight
+
 echo "Building $IMAGE_NAME:$SHORT_SHA and $IMAGE_NAME:$IMAGE_TAG from $BRANCH_NAME @ $SHORT_SHA"
 docker build -t "$IMAGE_NAME:$SHORT_SHA" -t "$IMAGE_NAME:$IMAGE_TAG" "$REPO_ROOT"
 
@@ -227,5 +237,7 @@ if [[ "${SKIP_PUBLIC_OPENWEBUI_TEST_CHECK:-}" != "1" ]]; then
   check_url "${PUBLIC_URL}/" "200"
   check_url "${PUBLIC_URL}/api/version" "200"
 fi
+
+storage_maintenance postdeploy
 
 echo "Test deploy complete: $FULL_SHA"
