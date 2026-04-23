@@ -12,6 +12,7 @@ SYNC_SCRIPT="$PROD_DEPLOY_ROOT/sync_hermes_native.py"
 DEPLOY_DOC="$TEST_DEPLOY_ROOT/DEPLOYMENT.md"
 IMAGE_NAME="open-webui-hermes-runtime-test"
 IMAGE_TAG="testing"
+DEPLOY_IMAGE="${OPENWEBUI_TEST_IMAGE:-${IMAGE_NAME}:${IMAGE_TAG}}"
 BACKEND_PORT="${OPENWEBUI_TEST_BACKEND_PORT:-3023}"
 PROXY_PORT="${OPENWEBUI_TEST_PROXY_PORT:-3022}"
 PUBLIC_URL="${OPENWEBUI_TEST_PUBLIC_URL:-https://chat-test.yxanadu.com}"
@@ -66,7 +67,24 @@ storage_maintenance() {
 storage_maintenance preflight
 
 echo "Building $IMAGE_NAME:$SHORT_SHA and $IMAGE_NAME:$IMAGE_TAG from $BRANCH_NAME @ $SHORT_SHA"
-docker build -t "$IMAGE_NAME:$SHORT_SHA" -t "$IMAGE_NAME:$IMAGE_TAG" "$REPO_ROOT"
+if [[ -n "${OPENWEBUI_TEST_IMAGE:-}" ]]; then
+  echo "Using off-host built image for test deploy: $OPENWEBUI_TEST_IMAGE"
+  docker pull "$OPENWEBUI_TEST_IMAGE"
+  docker tag "$OPENWEBUI_TEST_IMAGE" "$IMAGE_NAME:$SHORT_SHA"
+  docker tag "$OPENWEBUI_TEST_IMAGE" "$IMAGE_NAME:$IMAGE_TAG"
+else
+  echo "OPENWEBUI_TEST_IMAGE not set; using constrained local fallback build."
+  echo "This path is intentionally memory-limited so it fails instead of starving production."
+  DOCKER_BUILDKIT=0 docker build \
+    --memory="${OPENWEBUI_TEST_BUILD_MEMORY:-3g}" \
+    --memory-swap="${OPENWEBUI_TEST_BUILD_MEMORY_SWAP:-4g}" \
+    --build-arg BUILD_HASH="$FULL_SHA" \
+    --build-arg USE_SLIM=true \
+    --build-arg NODE_MAX_OLD_SPACE_SIZE="${OPENWEBUI_TEST_NODE_OLD_SPACE:-2048}" \
+    -t "$IMAGE_NAME:$SHORT_SHA" \
+    -t "$IMAGE_NAME:$IMAGE_TAG" \
+    "$REPO_ROOT"
+fi
 
 mkdir -p "$TEST_DEPLOY_ROOT"
 cp "$PROD_DEPLOY_ROOT/.env" "$TEST_DEPLOY_ROOT/.env"
@@ -88,7 +106,7 @@ PY
 cat > "$COMPOSE_FILE" <<YAML
 services:
   open-webui-test:
-    image: ${IMAGE_NAME}:${IMAGE_TAG}
+    image: ${DEPLOY_IMAGE}
     container_name: hermes-open-webui-test
     ports:
       - "127.0.0.1:${BACKEND_PORT}:8080"
@@ -134,6 +152,15 @@ docker compose -p open-webui-test up -d --force-recreate open-webui-test open-we
 # The test stack uses a fresh Open WebUI DB volume. Seed only the prod admin
 # login row (no chats/files/history) so Gavin can use the same login and the
 # Hermes catalog sync has an admin user to own model/tool/skill rows.
+if docker exec hermes-open-webui-test python3 - <<'PY' >/dev/null 2>&1
+import sqlite3
+conn=sqlite3.connect('/app/backend/data/webui.db')
+cur=conn.cursor()
+raise SystemExit(0 if cur.execute("SELECT 1 FROM user WHERE role='admin' LIMIT 1").fetchone() else 1)
+PY
+then
+  echo "Test stack already has an admin user; skipping production admin seed."
+else
 python3 - <<'PY'
 import json
 import subprocess
@@ -167,6 +194,7 @@ conn.commit()
 '''
 subprocess.run(['docker', 'exec', '-i', 'hermes-open-webui-test', 'python3', '-c', seed_script], input=payload, text=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 PY
+fi
 
 OPENWEBUI_CONTAINER=hermes-open-webui-test \
 OPENWEBUI_ROOT="$TEST_DEPLOY_ROOT" \
@@ -186,7 +214,7 @@ This is the isolated Open WebUI test deployment. It exists so Gavin can keep usi
 - current deployed commit: \`$FULL_SHA\`
 
 ## Runtime image
-- image tag in compose: \`${IMAGE_NAME}:${IMAGE_TAG}\`
+- image tag in compose: \`${DEPLOY_IMAGE}\`
 - last built image tag: \`${IMAGE_NAME}:${SHORT_SHA}\`
 - app version: \`$VERSION\`
 

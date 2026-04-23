@@ -8,6 +8,7 @@ Gavin's Open WebUI fork has two separate deployments.
 - URL: `https://chat-test.yxanadu.com`
 - Workflow: `.github/workflows/deploy-xanadu-test.yml`
 - Trigger: push to `testing` only; no manual/broad push redeploy trigger
+- Build isolation: the workflow builds the test image off-host on GitHub-hosted ARM and pushes `ghcr.io/gavinanelson/open-webui:xanadu-test-<sha>`; the Xanadu self-hosted deploy job only pulls that image and restarts the test stack
 - GitHub environment: `xanadu-testing`, custom deployment branch policy `testing` only
 - Script: `scripts/deploy-xanadu-openwebui-test.sh`
 - Backend container: `hermes-open-webui-test`
@@ -16,6 +17,8 @@ Gavin's Open WebUI fork has two separate deployments.
 - Data: separate Docker volume `open-webui-test_open-webui-test-data`
 
 Use this deployment for all normal development, experiments, and Hermes agent harness validation. Pushes to `testing` deploy here automatically.
+
+Important: do not move the test Docker build back onto `xanadu-host`. Local test image builds previously starved the Colima Docker VM and made the production backend container restart, which surfaced through Cloudflare as `chat.yxanadu.com` going down even though only `testing` was being deployed.
 
 ## Production deployment — only for approved releases
 
