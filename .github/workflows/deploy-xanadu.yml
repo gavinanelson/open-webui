@@ -4,8 +4,11 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
+# Production deploys are intentionally branch-bound:
+# only pushes that update `main` may run this workflow.
+# The `xanadu-production` GitHub environment also has a custom
+# deployment branch policy allowing only `main`.
 concurrency:
   group: open-webui-xanadu-deploy
   cancel-in-progress: true
