@@ -98,6 +98,7 @@ from open_webui.utils.misc import (
     convert_logit_bias_input_to_json,
     get_content_from_message,
     convert_output_to_messages,
+    inject_image_file_parts,
     strip_empty_content_blocks,
     should_emit_stream_content_snapshot,
 )
@@ -2228,30 +2229,13 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         if db_messages:
             system_message = get_system_message(form_data.get('messages', []))
             form_data['messages'] = [system_message, *db_messages] if system_message else db_messages
+        elif metadata.get('user_message'):
+            system_message = get_system_message(form_data.get('messages', []))
+            form_data['messages'] = (
+                [system_message, metadata['user_message']] if system_message else [metadata['user_message']]
+            )
 
-            # Inject image files into content as image_url parts (mirrors frontend logic)
-            for message in form_data['messages']:
-                image_files = [
-                    f
-                    for f in message.get('files', [])
-                    if f.get('type') == 'image' or (f.get('content_type') or '').startswith('image/')
-                ]
-                if message.get('role') == 'user' and image_files:
-                    text_content = message.get('content', '')
-                    if isinstance(text_content, str):
-                        message['content'] = [
-                            {'type': 'text', 'text': text_content},
-                            *[
-                                {
-                                    'type': 'image_url',
-                                    'image_url': {'url': f['url']},
-                                }
-                                for f in image_files
-                                if f.get('url')
-                            ],
-                        ]
-                # Strip files field — it's been incorporated into content
-                message.pop('files', None)
+        form_data['messages'] = inject_image_file_parts(form_data.get('messages', []))
 
     # Process messages with OR-aligned output items for clean LLM messages
     form_data['messages'] = process_messages_with_output(form_data.get('messages', []))

@@ -7,6 +7,7 @@ import {
 	collectRootMessageIds,
 	reconcileMessageHeights,
 	resolveBranchTargetId,
+	shouldRunInitialChatScroll,
 	updateMessageHeight
 } from './virtualization';
 
@@ -159,6 +160,32 @@ describe('computeVisibleRange', () => {
 			['a', 120],
 			['b', 180]
 		]);
+	});
+
+	it('requests an initial bottom scroll once per chat with messages', () => {
+		expect(
+			shouldRunInitialChatScroll({
+				chatId: 'chat-a',
+				currentId: 'message-a',
+				lastScrolledChatId: null
+			})
+		).toBe(true);
+
+		expect(
+			shouldRunInitialChatScroll({
+				chatId: 'chat-a',
+				currentId: 'message-a',
+				lastScrolledChatId: 'chat-a'
+			})
+		).toBe(false);
+
+		expect(
+			shouldRunInitialChatScroll({
+				chatId: 'chat-b',
+				currentId: null,
+				lastScrolledChatId: 'chat-a'
+			})
+		).toBe(false);
 	});
 });
 

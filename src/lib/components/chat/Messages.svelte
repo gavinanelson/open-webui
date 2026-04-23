@@ -25,6 +25,7 @@
 		computeVisibleRange,
 		reconcileMessageHeights,
 		resolveBranchTargetId,
+		shouldRunInitialChatScroll,
 		updateMessageHeight
 	} from './virtualization';
 
@@ -193,6 +194,7 @@
 	let pendingRebuild = null;
 	let lastCurrentId = null;
 	let lastRootIdsMessageCount = -1;
+	let lastInitialScrollChatId = null;
 
 	const buildMessages = () => {
 		let _messages = [];
@@ -255,6 +257,29 @@
 	};
 
 	$: handleHistoryChange(history.currentId, history.messages);
+
+	const scrollToBottomAfterRender = async () => {
+		await tick();
+		refreshVirtualization();
+		await tick();
+		scrollToBottom();
+		updateVisibleRange();
+		await tick();
+		scrollToBottom();
+		updateVisibleRange();
+	};
+
+	$: if (
+		shouldRunInitialChatScroll({
+			chatId,
+			currentId: history.currentId,
+			lastScrolledChatId: lastInitialScrollChatId
+		})
+	) {
+		lastInitialScrollChatId = chatId;
+		autoScroll = true;
+		scrollToBottomAfterRender();
+	}
 
 	$: if (autoScroll && bottomPadding) {
 		(async () => {

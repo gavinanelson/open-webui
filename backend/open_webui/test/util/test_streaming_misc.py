@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from open_webui.utils.middleware import flush_pending_stream_delta_data
-from open_webui.utils.misc import should_emit_stream_content_snapshot
+from open_webui.utils.misc import inject_image_file_parts, should_emit_stream_content_snapshot
 
 
 def test_should_emit_stream_content_snapshot_for_realtime_save():
@@ -76,6 +76,34 @@ def test_should_emit_stream_content_snapshot_for_plain_text_streaming():
 		)
 		is False
 	)
+
+
+def test_inject_image_file_parts_converts_uploaded_image_files_to_image_url_content():
+	messages = [
+		{
+			'role': 'user',
+			'content': 'what is in this image?',
+			'files': [
+				{
+					'type': 'file',
+					'url': 'abc123',
+					'content_type': 'image/png',
+				}
+			],
+		}
+	]
+
+	result = inject_image_file_parts(messages)
+
+	assert result == [
+		{
+			'role': 'user',
+			'content': [
+				{'type': 'text', 'text': 'what is in this image?'},
+				{'type': 'image_url', 'image_url': {'url': 'abc123'}},
+			],
+		}
+	]
 
 
 @pytest.mark.asyncio
