@@ -1,9 +1,10 @@
 name: Release
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main # or whatever branch you want to use
+    tags:
+      - 'v*'
 
 jobs:
   release:
