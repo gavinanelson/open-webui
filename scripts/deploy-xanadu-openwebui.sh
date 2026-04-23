@@ -26,8 +26,8 @@ PY
 )"
 fi
 
-if [[ "$BRANCH_NAME" != "main" && "$BRANCH_NAME" != "master" ]]; then
-  echo "Refusing to deploy from branch '$BRANCH_NAME' (allowed: main or master)" >&2
+if [[ "$BRANCH_NAME" != "main" ]]; then
+  echo "Refusing to deploy from branch '$BRANCH_NAME' (allowed: main only)" >&2
   exit 1
 fi
 

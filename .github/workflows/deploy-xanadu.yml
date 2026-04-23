@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - master
   workflow_dispatch:
 
 concurrency:
@@ -40,3 +39,20 @@ jobs:
         run: |
           chmod +x scripts/deploy-xanadu-openwebui.sh
           ./scripts/deploy-xanadu-openwebui.sh
+
+      - name: Verify public deployment
+        run: |
+          set -euo pipefail
+          for url in \
+            https://chat.yxanadu.com/ \
+            https://chat.yxanadu.com/api/version \
+            http://127.0.0.1:3013/health
+          do
+            echo "checking $url"
+            code=$(curl -k -sS -o /tmp/openwebui-check -w '%{http_code}' "$url")
+            echo "code=$code"
+            test "$code" = "200"
+            head -c 300 /tmp/openwebui-check || true
+            echo
+            echo
+          done
