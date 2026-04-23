@@ -1,0 +1,61 @@
+name: deploy-xanadu-test
+
+on:
+  push:
+    branches:
+      - testing
+  workflow_dispatch:
+
+concurrency:
+  group: open-webui-xanadu-test-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy-test:
+    name: Deploy Open WebUI test stack to xanadu-host
+    environment:
+      name: xanadu-testing
+      url: https://chat-test.yxanadu.com
+    runs-on:
+      - self-hosted
+      - macOS
+      - ARM64
+      - xanadu-host
+      - open-webui-deploy
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show deploy target
+        run: |
+          echo "branch=${GITHUB_REF_NAME}"
+          git rev-parse HEAD
+
+      - name: Deploy test stack to xanadu-host
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          chmod +x scripts/deploy-xanadu-openwebui-test.sh
+          ./scripts/deploy-xanadu-openwebui-test.sh
+
+      - name: Verify public test deployment
+        run: |
+          set -euo pipefail
+          for url in \
+            https://chat-test.yxanadu.com/ \
+            https://chat-test.yxanadu.com/api/version \
+            http://127.0.0.1:3023/health
+          do
+            echo "checking $url"
+            code=$(curl -k -sS -o /tmp/openwebui-test-check -w '%{http_code}' "$url")
+            echo "code=$code"
+            test "$code" = "200"
+            head -c 300 /tmp/openwebui-test-check || true
+            echo
+            echo
+          done
