@@ -90,7 +90,6 @@
 	import Component from '../icons/Component.svelte';
 	import PlusAlt from '../icons/PlusAlt.svelte';
 	import Dropdown from '../common/Dropdown.svelte';
-	import ModelSelector from './ModelSelector.svelte';
 
 	import CommandSuggestionList from './MessageInput/CommandSuggestionList.svelte';
 	import Knobs from '../icons/Knobs.svelte';
@@ -129,10 +128,20 @@
 					? `OpenAI connection ${selectedComposerModel.urlIdx + 1}`
 					: 'OpenAI-compatible'
 				: (selectedComposerModel?.owned_by ?? 'Provider');
+	$: selectedComposerModelLabel =
+		selectedComposerModel?.name ?? selectedComposerModel?.id ?? $i18n.t('Select model');
 
 	const setHermesCommand = async (command: string) => {
 		await setText(command);
 	};
+
+	const setComposerModel = (modelId: string) => {
+		atSelectedModel = undefined;
+		selectedModels = [modelId];
+	};
+
+	const compactSelectorClass =
+		'flex max-w-[13rem] items-center gap-1 truncate rounded-lg px-2 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800';
 
 	const HERMES_COMMAND_GROUPS = [
 		{
@@ -1339,14 +1348,11 @@
 							{#if atSelectedModel !== undefined}
 								<div class="px-3 pt-3 text-left w-full flex flex-col z-10">
 									<div class="flex items-center justify-between w-full">
-										<div class="pl-[1px] flex items-center gap-2 text-sm dark:text-gray-500">
-											<img
-												alt="model profile"
-												class="size-3.5 max-w-[28px] object-cover rounded-full"
-												src={`${WEBUI_API_BASE_URL}/models/model/profile/image?id=${$models.find((model) => model.id === atSelectedModel.id).id}&lang=${$i18n.language}`}
-											/>
+										<div
+											class="pl-[1px] flex min-w-0 items-center gap-2 text-sm dark:text-gray-500"
+										>
 											<div class="translate-y-[0.5px]">
-												<span class="">{atSelectedModel.name}</span>
+												<span class="line-clamp-1">{atSelectedModel.name}</span>
 											</div>
 										</div>
 										<div>
@@ -1359,87 +1365,6 @@
 												<XMark />
 											</button>
 										</div>
-									</div>
-								</div>
-							{:else}
-								<div
-									class="flex flex-wrap items-center justify-between gap-2 px-3 pt-3 text-left text-xs text-gray-500 dark:text-gray-400"
-									dir="ltr"
-								>
-									<div class="flex min-w-0 items-center gap-2">
-										<div class="max-w-[18rem] overflow-hidden">
-											<ModelSelector bind:selectedModels showSetDefault={false} />
-										</div>
-										<div class="hidden min-w-0 flex-col leading-tight @sm:flex">
-											<span class="line-clamp-1 font-medium text-gray-600 dark:text-gray-300">
-												{selectedComposerProvider}
-											</span>
-											<span class="line-clamp-1 text-[11px] text-gray-400 dark:text-gray-500">
-												Applies to the next turn. Hermes session commands may reset provider
-												context.
-											</span>
-										</div>
-									</div>
-
-									<div class="flex shrink-0 items-center gap-1">
-										<Tooltip content="Enable Hermes fast mode">
-											<button
-												type="button"
-												class="rounded-md px-2 py-1 font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-												on:click={() => setHermesCommand('/fast on')}
-											>
-												Fast
-											</button>
-										</Tooltip>
-
-										<Tooltip content="Disable Hermes fast mode">
-											<button
-												type="button"
-												class="rounded-md px-2 py-1 font-medium text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-												on:click={() => setHermesCommand('/fast off')}
-											>
-												Normal
-											</button>
-										</Tooltip>
-
-										<Dropdown
-											side="top"
-											align="end"
-											contentClass="w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-2 shadow-lg dark:border-gray-800 dark:bg-gray-900"
-										>
-											<button
-												type="button"
-												class="rounded-md px-2 py-1 font-medium text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-											>
-												Hermes
-											</button>
-
-											<div slot="content" class="space-y-2">
-												{#each HERMES_COMMAND_GROUPS as group}
-													<div>
-														<div class="px-2 pb-1 text-[11px] font-semibold text-gray-400">
-															{group.label}
-														</div>
-														<div class="space-y-0.5">
-															{#each group.commands as item}
-																<button
-																	type="button"
-																	class="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-gray-50 dark:hover:bg-gray-850"
-																	on:click={() => setHermesCommand(item.command)}
-																>
-																	<div class="font-mono text-xs text-gray-700 dark:text-gray-200">
-																		{item.command}
-																	</div>
-																	<div class="line-clamp-1 text-[11px] text-gray-400">
-																		{item.description}
-																	</div>
-																</button>
-															{/each}
-														</div>
-													</div>
-												{/each}
-											</div>
-										</Dropdown>
 									</div>
 								</div>
 							{/if}
@@ -1796,6 +1721,148 @@
 											<PlusAlt className="size-5.5" />
 										</div>
 									</InputMenu>
+
+									{#if atSelectedModel === undefined}
+										<div
+											class="hidden self-center w-[1px] h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50 @md:block"
+										/>
+
+										<div
+											class="hidden min-w-0 items-center gap-0.5 overflow-hidden text-gray-500 dark:text-gray-400 @md:flex"
+										>
+											<Dropdown
+												side="top"
+												align="start"
+												contentClass="w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-1.5 shadow-lg dark:border-gray-800 dark:bg-gray-900"
+											>
+												<Tooltip content="Model for the next message">
+													<button type="button" class={compactSelectorClass}>
+														<span class="line-clamp-1">{selectedComposerModelLabel}</span>
+														<span class="text-[10px] text-gray-400">v</span>
+													</button>
+												</Tooltip>
+
+												<div slot="content" class="max-h-80 overflow-y-auto">
+													{#each $models as model (model.id)}
+														<button
+															type="button"
+															class="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition hover:bg-gray-50 dark:hover:bg-gray-850"
+															on:click={() => setComposerModel(model.id)}
+														>
+															<span class="min-w-0">
+																<span class="line-clamp-1 text-sm text-gray-800 dark:text-gray-100">
+																	{model.name ?? model.id}
+																</span>
+																<span class="line-clamp-1 text-[11px] text-gray-400">
+																	{model.owned_by ?? 'Provider'}
+																</span>
+															</span>
+															{#if selectedModels[0] === model.id}
+																<span class="text-xs font-semibold text-emerald-500">Selected</span>
+															{/if}
+														</button>
+													{/each}
+												</div>
+											</Dropdown>
+
+											<div class="self-center w-px h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50" />
+
+											<Dropdown
+												side="top"
+												align="start"
+												contentClass="w-72 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-2 shadow-lg dark:border-gray-800 dark:bg-gray-900"
+											>
+												<Tooltip content="Hermes provider and speed commands">
+													<button type="button" class={compactSelectorClass}>
+														<span class="line-clamp-1">Medium · Normal</span>
+														<span class="text-[10px] text-gray-400">v</span>
+													</button>
+												</Tooltip>
+
+												<div slot="content" class="space-y-2">
+													<div>
+														<div class="px-2 pb-1 text-[11px] font-semibold text-gray-400">
+															Run mode
+														</div>
+														<div class="grid grid-cols-2 gap-1">
+															<button
+																type="button"
+																class="rounded-lg px-2 py-1.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-850"
+																on:click={() => setHermesCommand('/fast off')}
+															>
+																Normal
+															</button>
+															<button
+																type="button"
+																class="rounded-lg px-2 py-1.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-850"
+																on:click={() => setHermesCommand('/fast on')}
+															>
+																Fast
+															</button>
+														</div>
+													</div>
+													<div>
+														<div class="px-2 pb-1 text-[11px] font-semibold text-gray-400">
+															Provider
+														</div>
+														<button
+															type="button"
+															class="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-gray-50 dark:hover:bg-gray-850"
+															on:click={() => setHermesCommand('/provider')}
+														>
+															<div class="line-clamp-1 text-sm text-gray-800 dark:text-gray-100">
+																{selectedComposerProvider}
+															</div>
+															<div class="line-clamp-1 text-[11px] text-gray-400">
+																Model/provider commands may reset Hermes session context.
+															</div>
+														</button>
+													</div>
+												</div>
+											</Dropdown>
+
+											<div class="self-center w-px h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50" />
+
+											<Dropdown
+												side="top"
+												align="start"
+												contentClass="w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-2 shadow-lg dark:border-gray-800 dark:bg-gray-900"
+											>
+												<Tooltip content="Hermes command groups">
+													<button type="button" class={compactSelectorClass}>
+														<span>Hermes</span>
+														<span class="text-[10px] text-gray-400">v</span>
+													</button>
+												</Tooltip>
+
+												<div slot="content" class="space-y-2">
+													{#each HERMES_COMMAND_GROUPS as group}
+														<div>
+															<div class="px-2 pb-1 text-[11px] font-semibold text-gray-400">
+																{group.label}
+															</div>
+															<div class="space-y-0.5">
+																{#each group.commands as item}
+																	<button
+																		type="button"
+																		class="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-gray-50 dark:hover:bg-gray-850"
+																		on:click={() => setHermesCommand(item.command)}
+																	>
+																		<div class="font-mono text-xs text-gray-700 dark:text-gray-200">
+																			{item.command}
+																		</div>
+																		<div class="line-clamp-1 text-[11px] text-gray-400">
+																			{item.description}
+																		</div>
+																	</button>
+																{/each}
+															</div>
+														</div>
+													{/each}
+												</div>
+											</Dropdown>
+										</div>
+									{/if}
 
 									{#if showWebSearchButton || showImageGenerationButton || showCodeInterpreterButton || showToolsButton || (toggleFilters && toggleFilters.length > 0)}
 										<div

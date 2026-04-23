@@ -141,6 +141,20 @@ def _compact_event_value(value, max_chars=4000):
 
 
 def build_hermes_status_payload(data: dict[str, Any], event_type: str):
+    inferred_action = data.get('action') or data.get('tool') or data.get('phase')
+    if not inferred_action:
+        if 'reasoning' in event_type:
+            inferred_action = 'reasoning'
+        elif event_type.startswith('hermes.tool.'):
+            inferred_action = event_type.rsplit('.', 1)[-1]
+        else:
+            inferred_action = 'progress'
+
+    done = bool(data.get('done', False))
+    status = str(data.get('status') or '').lower()
+    if status in {'completed', 'complete', 'done'} or event_type.endswith('.completed'):
+        done = True
+
     payload = {
         key: _compact_event_value(value)
         for key, value in data.items()
@@ -156,9 +170,9 @@ def build_hermes_status_payload(data: dict[str, Any], event_type: str):
 
     payload.update(
         {
-            'action': data.get('action') or data.get('tool') or data.get('phase') or 'tool_progress',
+            'action': inferred_action,
             'description': description,
-            'done': bool(data.get('done', False)),
+            'done': done,
             'source': data.get('source') or 'hermes',
             'event': event_type,
             'received_at': time.time(),
@@ -166,6 +180,25 @@ def build_hermes_status_payload(data: dict[str, Any], event_type: str):
     )
 
     return payload
+
+
+def is_hermes_status_event(event_type: str | None):
+    if not event_type or not event_type.startswith('hermes.'):
+        return False
+
+    return (
+        event_type == 'hermes.tool.progress'
+        or event_type.startswith('hermes.tool.')
+        or event_type.startswith('hermes.reasoning')
+        or event_type
+        in {
+            'hermes.status',
+            'hermes.progress',
+            'hermes.lifecycle',
+            'hermes.session',
+            'hermes.queue',
+        }
+    )
 
 
 from open_webui.config import (
@@ -3956,7 +3989,7 @@ async def streaming_chat_response_handler(response, ctx):
                         try:
                             data = json.loads(data)
 
-                            if current_sse_event == 'hermes.tool.progress':
+                            if is_hermes_status_event(current_sse_event):
                                 await event_emitter(
                                     {
                                         'type': 'status',
