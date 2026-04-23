@@ -38,7 +38,7 @@
 	export let autoScroll = false;
 
 	export let atSelectedModel: Model | undefined;
-	export let selectedModels: [''];
+	export let selectedModels: string[] = [''];
 
 	export let history;
 
@@ -212,7 +212,7 @@
 				<MessageInput
 					bind:this={messageInput}
 					{history}
-					{selectedModels}
+					bind:selectedModels
 					bind:files
 					bind:prompt
 					bind:autoScroll

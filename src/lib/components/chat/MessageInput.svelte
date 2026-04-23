@@ -90,6 +90,7 @@
 	import Component from '../icons/Component.svelte';
 	import PlusAlt from '../icons/PlusAlt.svelte';
 	import Dropdown from '../common/Dropdown.svelte';
+	import ModelSelector from './ModelSelector.svelte';
 
 	import CommandSuggestionList from './MessageInput/CommandSuggestionList.svelte';
 	import Knobs from '../icons/Knobs.svelte';
@@ -114,10 +115,57 @@
 	export let uploadPending = false;
 
 	export let atSelectedModel: Model | undefined = undefined;
-	export let selectedModels: [''];
+	export let selectedModels: string[] = [''];
 
 	let selectedModelIds = [];
 	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
+	let selectedComposerModel: any = null;
+	$: selectedComposerModel = $models.find((model) => model.id === selectedModelIds[0]) ?? null;
+	$: selectedComposerProvider =
+		selectedComposerModel?.owned_by === 'ollama'
+			? 'Ollama'
+			: selectedComposerModel?.owned_by === 'openai'
+				? selectedComposerModel?.urlIdx !== undefined
+					? `OpenAI connection ${selectedComposerModel.urlIdx + 1}`
+					: 'OpenAI-compatible'
+				: (selectedComposerModel?.owned_by ?? 'Provider');
+
+	const setHermesCommand = async (command: string) => {
+		await setText(command);
+	};
+
+	const HERMES_COMMAND_GROUPS = [
+		{
+			label: 'Model',
+			commands: [
+				{ command: '/model ', description: 'Switch Hermes model for this session' },
+				{ command: '/provider', description: 'Show Hermes providers' },
+				{ command: '/fast on', description: 'Enable Hermes fast mode' },
+				{ command: '/fast off', description: 'Disable Hermes fast mode' },
+				{ command: '/reasoning ', description: 'Set reasoning effort/display' }
+			]
+		},
+		{
+			label: 'Session',
+			commands: [
+				{ command: '/new', description: 'Start a fresh Hermes session' },
+				{ command: '/retry', description: 'Retry the last turn' },
+				{ command: '/undo', description: 'Remove the last exchange' },
+				{ command: '/stop', description: 'Stop running work' },
+				{ command: '/status', description: 'Show session status' }
+			]
+		},
+		{
+			label: 'Work',
+			commands: [
+				{ command: '/queue ', description: 'Queue a prompt for later' },
+				{ command: '/btw ', description: 'Ask an ephemeral side question' },
+				{ command: '/background ', description: 'Run a background prompt' },
+				{ command: '/usage', description: 'Show usage and limits' },
+				{ command: '/debug', description: 'Create a debug report' }
+			]
+		}
+	];
 
 	export let history;
 	export let taskIds = null;
@@ -1311,6 +1359,87 @@
 												<XMark />
 											</button>
 										</div>
+									</div>
+								</div>
+							{:else}
+								<div
+									class="flex flex-wrap items-center justify-between gap-2 px-3 pt-3 text-left text-xs text-gray-500 dark:text-gray-400"
+									dir="ltr"
+								>
+									<div class="flex min-w-0 items-center gap-2">
+										<div class="max-w-[18rem] overflow-hidden">
+											<ModelSelector bind:selectedModels showSetDefault={false} />
+										</div>
+										<div class="hidden min-w-0 flex-col leading-tight @sm:flex">
+											<span class="line-clamp-1 font-medium text-gray-600 dark:text-gray-300">
+												{selectedComposerProvider}
+											</span>
+											<span class="line-clamp-1 text-[11px] text-gray-400 dark:text-gray-500">
+												Applies to the next turn. Hermes session commands may reset provider
+												context.
+											</span>
+										</div>
+									</div>
+
+									<div class="flex shrink-0 items-center gap-1">
+										<Tooltip content="Enable Hermes fast mode">
+											<button
+												type="button"
+												class="rounded-md px-2 py-1 font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+												on:click={() => setHermesCommand('/fast on')}
+											>
+												Fast
+											</button>
+										</Tooltip>
+
+										<Tooltip content="Disable Hermes fast mode">
+											<button
+												type="button"
+												class="rounded-md px-2 py-1 font-medium text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+												on:click={() => setHermesCommand('/fast off')}
+											>
+												Normal
+											</button>
+										</Tooltip>
+
+										<Dropdown
+											side="top"
+											align="end"
+											contentClass="w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-2 shadow-lg dark:border-gray-800 dark:bg-gray-900"
+										>
+											<button
+												type="button"
+												class="rounded-md px-2 py-1 font-medium text-gray-500 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+											>
+												Hermes
+											</button>
+
+											<div slot="content" class="space-y-2">
+												{#each HERMES_COMMAND_GROUPS as group}
+													<div>
+														<div class="px-2 pb-1 text-[11px] font-semibold text-gray-400">
+															{group.label}
+														</div>
+														<div class="space-y-0.5">
+															{#each group.commands as item}
+																<button
+																	type="button"
+																	class="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-gray-50 dark:hover:bg-gray-850"
+																	on:click={() => setHermesCommand(item.command)}
+																>
+																	<div class="font-mono text-xs text-gray-700 dark:text-gray-200">
+																		{item.command}
+																	</div>
+																	<div class="line-clamp-1 text-[11px] text-gray-400">
+																		{item.description}
+																	</div>
+																</button>
+															{/each}
+														</div>
+													</div>
+												{/each}
+											</div>
+										</Dropdown>
 									</div>
 								</div>
 							{/if}
