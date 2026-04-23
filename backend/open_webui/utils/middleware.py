@@ -119,6 +119,55 @@ from open_webui.utils.response import normalize_usage
 from open_webui.utils.mcp.client import MCPClient
 
 
+def _compact_event_value(value, max_chars=4000):
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+
+    if isinstance(value, str):
+        return value if len(value) <= max_chars else f'{value[:max_chars]}...'
+
+    if isinstance(value, (list, dict)):
+        try:
+            encoded = json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)[:max_chars]
+
+        if len(encoded) <= max_chars:
+            return value
+
+        return f'{encoded[:max_chars]}...'
+
+    return str(value)[:max_chars]
+
+
+def build_hermes_status_payload(data: dict[str, Any], event_type: str):
+    payload = {
+        key: _compact_event_value(value)
+        for key, value in data.items()
+        if not key.startswith('_')
+    }
+
+    description = data.get('label') or data.get('description') or data.get('message') or data.get('tool')
+    description = description or 'Hermes is working'
+
+    emoji = data.get('emoji') or ''
+    if emoji and isinstance(description, str) and not description.startswith(str(emoji)):
+        description = f'{emoji} {description}'
+
+    payload.update(
+        {
+            'action': data.get('action') or data.get('tool') or data.get('phase') or 'tool_progress',
+            'description': description,
+            'done': bool(data.get('done', False)),
+            'source': data.get('source') or 'hermes',
+            'event': event_type,
+            'received_at': time.time(),
+        }
+    )
+
+    return payload
+
+
 from open_webui.config import (
     CACHE_DIR,
     DEFAULT_VOICE_MODE_PROMPT_TEMPLATE,
@@ -3885,8 +3934,6 @@ async def streaming_chat_response_handler(response, ctx):
 
                     current_sse_event = None
 
-                    current_sse_event = None
-
                     async for line in response.body_iterator:
                         line = line.decode('utf-8', 'replace') if isinstance(line, bytes) else line
                         data = line
@@ -3910,18 +3957,10 @@ async def streaming_chat_response_handler(response, ctx):
                             data = json.loads(data)
 
                             if current_sse_event == 'hermes.tool.progress':
-                                description = data.get('label') or data.get('tool') or 'Hermes is working'
-                                emoji = data.get('emoji') or ''
-                                if emoji:
-                                    description = f"{emoji} {description}"
                                 await event_emitter(
                                     {
                                         'type': 'status',
-                                        'data': {
-                                            'action': data.get('tool', 'tool_progress'),
-                                            'description': description,
-                                            'done': False,
-                                        },
+                                        'data': build_hermes_status_payload(data, current_sse_event),
                                     }
                                 )
                                 current_sse_event = None

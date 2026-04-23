@@ -112,7 +112,33 @@
 
 	const BREAKPOINT = 768;
 
+	const clearSocketHeartbeat = () => {
+		if (heartbeatInterval) {
+			clearInterval(heartbeatInterval);
+			heartbeatInterval = null;
+		}
+	};
+
+	const sendSocketHeartbeat = (_socket = $socket) => {
+		if (_socket?.connected) {
+			_socket.emit('heartbeat', {});
+		}
+	};
+
+	const startSocketHeartbeat = (_socket) => {
+		clearSocketHeartbeat();
+		sendSocketHeartbeat(_socket);
+		heartbeatInterval = setInterval(() => {
+			sendSocketHeartbeat(_socket);
+		}, 30000);
+	};
+
 	const setupSocket = async (enableWebsocket) => {
+		clearSocketHeartbeat();
+		$socket?.removeAllListeners();
+		$socket?.disconnect();
+		socketConnected.set(false);
+
 		const _socket = io(`${WEBUI_BASE_URL}` || undefined, {
 			reconnection: true,
 			reconnectionDelay: 1000,
@@ -134,9 +160,9 @@
 			console.log('connected', _socket.id);
 
 			if (hasConnectedOnce) {
-				socketConnected.set(true);
 				toast.success($i18n.t('Reconnected'));
 			}
+			socketConnected.set(true);
 			hasConnectedOnce = true;
 
 			const res = await getVersion(localStorage.token);
@@ -155,13 +181,7 @@
 				}
 			}
 
-			// Send heartbeat every 30 seconds
-			heartbeatInterval = setInterval(() => {
-				if (_socket.connected) {
-					console.log('Sending heartbeat');
-					_socket.emit('heartbeat', {});
-				}
-			}, 30000);
+			startSocketHeartbeat(_socket);
 
 			if (deploymentId !== null) {
 				WEBUI_DEPLOYMENT_ID.set(deploymentId);
@@ -194,11 +214,7 @@
 			console.log(`Socket ${_socket.id} disconnected due to ${reason}`);
 			socketConnected.set(false);
 			toast.warning($i18n.t('Connection lost. Reconnecting...'));
-
-			if (heartbeatInterval) {
-				clearInterval(heartbeatInterval);
-				heartbeatInterval = null;
-			}
+			clearSocketHeartbeat();
 
 			if (details) {
 				console.log('Additional details:', details);
@@ -929,6 +945,7 @@
 
 				// Check token expiry when the tab becomes active
 				checkTokenExpiry();
+				sendSocketHeartbeat();
 			}
 		};
 
@@ -1118,6 +1135,10 @@
 	});
 
 	onDestroy(() => {
+		clearSocketHeartbeat();
+		$socket?.removeAllListeners();
+		$socket?.disconnect();
+		socket.set(null);
 		bc.close();
 	});
 </script>

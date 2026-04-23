@@ -25,6 +25,7 @@
 
 	let triggerEl;
 	let contentEl;
+	let positionRAF: number | null = null;
 
 	/** Svelte action: moves the node to document.body */
 	function portal(node) {
@@ -101,6 +102,15 @@
 		}
 	}
 
+	function schedulePositionContent() {
+		if (!show || positionRAF !== null) return;
+
+		positionRAF = requestAnimationFrame(() => {
+			positionRAF = null;
+			positionContent();
+		});
+	}
+
 	async function toggleOpen() {
 		show = !show;
 		onOpenChange(show);
@@ -152,13 +162,16 @@
 		if (onPointerDown) {
 			document.removeEventListener('pointerdown', onPointerDown, true);
 		}
+		if (positionRAF !== null) {
+			cancelAnimationFrame(positionRAF);
+		}
 	});
 </script>
 
 <svelte:window
 	on:keydown={handleKeydown}
-	on:scroll|capture={positionContent}
-	on:resize={positionContent}
+	on:scroll|capture={schedulePositionContent}
+	on:resize={schedulePositionContent}
 />
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
