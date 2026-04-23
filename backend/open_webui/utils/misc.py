@@ -146,6 +146,46 @@ def should_emit_stream_content_snapshot(
     )
 
 
+def inject_image_file_parts(messages: list[dict]) -> list[dict]:
+    injected = []
+
+    for message in messages:
+        copied = dict(message)
+        image_files = [
+            file
+            for file in copied.get('files', []) or []
+            if file.get('url')
+            and (file.get('type') == 'image' or (file.get('content_type') or '').startswith('image/'))
+        ]
+
+        if copied.get('role') == 'user' and image_files:
+            content = copied.get('content', '')
+            if isinstance(content, list):
+                existing_urls = {
+                    part.get('image_url', {}).get('url')
+                    for part in content
+                    if isinstance(part, dict) and part.get('type') == 'image_url'
+                }
+                copied['content'] = [
+                    *content,
+                    *[
+                        {'type': 'image_url', 'image_url': {'url': file['url']}}
+                        for file in image_files
+                        if file['url'] not in existing_urls
+                    ],
+                ]
+            else:
+                copied['content'] = [
+                    {'type': 'text', 'text': content},
+                    *[{'type': 'image_url', 'image_url': {'url': file['url']}} for file in image_files],
+                ]
+
+        copied.pop('files', None)
+        injected.append(copied)
+
+    return injected
+
+
 def convert_output_to_messages(output: list, raw: bool = False) -> list[dict]:
     """
     Convert OR-aligned output items to OpenAI Chat Completion-format messages.

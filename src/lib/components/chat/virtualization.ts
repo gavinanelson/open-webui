@@ -56,6 +56,16 @@ export const updateMessageHeight = (
 	return nextHeights;
 };
 
+export const shouldRunInitialChatScroll = ({
+	chatId,
+	currentId,
+	lastScrolledChatId
+}: {
+	chatId: string | null | undefined;
+	currentId: string | null | undefined;
+	lastScrolledChatId: string | null | undefined;
+}) => Boolean(chatId && currentId && chatId !== lastScrolledChatId);
+
 type BuildVirtualizationLayoutParams = {
 	messageIds: string[];
 	heightOf: (id: string) => number;
