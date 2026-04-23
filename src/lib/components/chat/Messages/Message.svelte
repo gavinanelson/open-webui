@@ -1,23 +1,22 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
-
 	import { tick, getContext, onMount, createEventDispatcher } from 'svelte';
-	const dispatch = createEventDispatcher();
-	const i18n = getContext('i18n');
-
 	import { settings } from '$lib/stores';
-	import { copyToClipboard } from '$lib/utils';
 
 	import MultiResponseMessages from './MultiResponseMessages.svelte';
 	import ResponseMessage from './ResponseMessage.svelte';
 	import UserMessage from './UserMessage.svelte';
 
+	const dispatch = createEventDispatcher();
+	const i18n = getContext('i18n');
+
 	export let chatId;
 	export let selectedModels = [];
+	export let visibilityMode = 'compact';
 	export let idx = 0;
 
 	export let history;
 	export let messageId;
+	export let rootMessageIds = [];
 
 	export let user;
 
@@ -43,27 +42,62 @@
 	export let readOnly = false;
 	export let editCodeBlock = true;
 	export let topPadding = false;
+
+	let itemElement: HTMLDivElement | null = null;
+	let resizeObserver: ResizeObserver | null = null;
+	let message;
+	let parentMessage;
+
+	$: message = history?.messages?.[messageId];
+	$: parentMessage = message?.parentId !== null ? history?.messages?.[message.parentId] : null;
+
+	const reportHeight = () => {
+		if (!itemElement || !messageId) return;
+
+		dispatch('heightchange', {
+			messageId,
+			height: Math.ceil(itemElement.getBoundingClientRect().height)
+		});
+	};
+
+	onMount(() => {
+		if (!itemElement) {
+			return;
+		}
+
+		if (typeof ResizeObserver === 'undefined') {
+			void tick().then(reportHeight);
+			return;
+		}
+
+		resizeObserver = new ResizeObserver(() => {
+			reportHeight();
+		});
+		resizeObserver.observe(itemElement);
+		reportHeight();
+
+		return () => {
+			resizeObserver?.disconnect();
+		};
+	});
 </script>
 
 <div
+	bind:this={itemElement}
 	role="listitem"
 	class="flex flex-col justify-between px-5 mb-3 w-full {($settings?.widescreenMode ?? null)
 		? 'max-w-full'
 		: 'max-w-5xl'} mx-auto rounded-lg group"
 >
-	{#if history.messages[messageId]}
-		{#if history.messages[messageId].role === 'user'}
+	{#if message}
+		{#if message.role === 'user'}
 			<UserMessage
 				{user}
 				{chatId}
 				{history}
 				{messageId}
 				isFirstMessage={idx === 0}
-				siblings={history.messages[messageId].parentId !== null
-					? (history.messages[history.messages[messageId].parentId]?.childrenIds ?? [])
-					: (Object.values(history.messages)
-							.filter((message) => message.parentId === null)
-							.map((message) => message.id) ?? [])}
+				siblings={message.parentId !== null ? (parentMessage?.childrenIds ?? []) : rootMessageIds}
 				{gotoMessage}
 				{showPreviousMessage}
 				{showNextMessage}
@@ -73,14 +107,15 @@
 				{editCodeBlock}
 				{topPadding}
 			/>
-		{:else if (history.messages[history.messages[messageId].parentId]?.models?.length ?? 1) === 1}
+		{:else if (parentMessage?.models?.length ?? 1) === 1}
 			<ResponseMessage
 				{chatId}
 				{history}
 				{messageId}
 				{selectedModels}
+				{visibilityMode}
 				isLastMessage={messageId === history.currentId}
-				siblings={history.messages[history.messages[messageId].parentId]?.childrenIds ?? []}
+				siblings={parentMessage?.childrenIds ?? []}
 				{setInputText}
 				{gotoMessage}
 				{showPreviousMessage}
@@ -106,6 +141,7 @@
 					{chatId}
 					{messageId}
 					{selectedModels}
+					{visibilityMode}
 					isLastMessage={messageId === history?.currentId}
 					{setInputText}
 					{updateChat}

@@ -3,11 +3,10 @@
 	import { toast } from 'svelte-sonner';
 	import { tick, getContext, onMount } from 'svelte';
 
-	import { models, settings } from '$lib/stores';
+	import { settings } from '$lib/stores';
 	import { user as _user } from '$lib/stores';
 	import { copyToClipboard as _copyToClipboard, formatDate } from '$lib/utils';
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
-	import equal from 'fast-deep-equal';
 
 	import Name from './Name.svelte';
 	import ProfileImage from './ProfileImage.svelte';
@@ -16,6 +15,7 @@
 	import Markdown from './Markdown.svelte';
 	import Image from '$lib/components/common/Image.svelte';
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import { createUserMessageEditDraft } from './userMessageEdit';
 
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
 
@@ -53,15 +53,11 @@
 	let messageEditTextAreaElement: HTMLTextAreaElement;
 	let editScrollContainer: HTMLDivElement;
 
-	let message = structuredClone(history.messages[messageId]);
+	let message = history.messages[messageId];
 	$: if (history.messages) {
 		const source = history.messages[messageId];
 		if (source) {
-			if (message.content !== source.content) {
-				message = structuredClone(source);
-			} else if (!equal(message, source)) {
-				message = structuredClone(source);
-			}
+			message = source;
 		}
 	}
 
@@ -74,8 +70,9 @@
 
 	const editMessageHandler = async () => {
 		edit = true;
-		editedContent = message?.content ?? '';
-		editedFiles = message.files;
+		const draft = createUserMessageEditDraft(message);
+		editedContent = draft.content;
+		editedFiles = draft.files;
 
 		await tick();
 

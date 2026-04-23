@@ -99,6 +99,7 @@ from open_webui.utils.misc import (
     get_content_from_message,
     convert_output_to_messages,
     strip_empty_content_blocks,
+    should_emit_stream_content_snapshot,
 )
 from open_webui.utils.tools import (
     get_tools,
@@ -3291,6 +3292,29 @@ async def outlet_filter_handler(ctx):
         log.debug(f'Error running outlet filters: {e}')
 
 
+async def flush_pending_stream_delta_data(
+    *,
+    event_emitter,
+    delta_count: int,
+    last_delta_data,
+    threshold: int = 0,
+    save_pending=None,
+):
+    if delta_count < threshold or not last_delta_data:
+        return delta_count, last_delta_data
+
+    if save_pending is not None:
+        await save_pending()
+
+    await event_emitter(
+        {
+            'type': 'chat:completion',
+            'data': last_delta_data,
+        }
+    )
+    return 0, None
+
+
 async def non_streaming_chat_response_handler(response, ctx):
     request = ctx['request']
 
@@ -3789,20 +3813,91 @@ async def streaming_chat_response_handler(response, ctx):
                         int(metadata.get('params', {}).get('stream_delta_chunk_size') or 1),
                     )
                     last_delta_data = None
+                    pending_realtime_save = None
+                    last_emitted_snapshot = serialize_output(full_output()) if output else content
+                    cached_snapshot_output = full_output() if output else []
+                    cached_snapshot_content = last_emitted_snapshot
+                    snapshot_dirty = False
+                    cached_pending_tool_call_key = None
+                    cached_pending_tool_call_content = None
 
-                    async def flush_pending_delta_data(threshold: int = 0):
-                        nonlocal delta_count
-                        nonlocal last_delta_data
+                    async def save_pending_realtime_chat():
+                        nonlocal pending_realtime_save
 
-                        if delta_count >= threshold and last_delta_data:
+                        if not ENABLE_REALTIME_CHAT_SAVE or pending_realtime_save is None:
+                            return
+
+                        await Chats.upsert_message_to_chat_by_id_and_message_id(
+                            metadata['chat_id'],
+                            metadata['message_id'],
+                            pending_realtime_save,
+                        )
+                        pending_realtime_save = None
+
+                    def invalidate_stream_snapshot():
+                        nonlocal snapshot_dirty
+                        nonlocal cached_pending_tool_call_key
+                        nonlocal cached_pending_tool_call_content
+
+                        snapshot_dirty = True
+                        cached_pending_tool_call_key = None
+                        cached_pending_tool_call_content = None
+
+                    def build_stream_snapshot(extra_output=None):
+                        nonlocal cached_snapshot_output
+                        nonlocal cached_snapshot_content
+                        nonlocal snapshot_dirty
+                        nonlocal cached_pending_tool_call_key
+                        nonlocal cached_pending_tool_call_content
+
+                        if snapshot_dirty:
+                            cached_snapshot_output = full_output()
+                            cached_snapshot_content = serialize_output(cached_snapshot_output)
+                            snapshot_dirty = False
+
+                        if extra_output:
+                            extra_output_key = tuple(
+                                (
+                                    item.get('type'),
+                                    item.get('call_id'),
+                                    item.get('name'),
+                                    item.get('arguments'),
+                                    item.get('status'),
+                                )
+                                for item in extra_output
+                            )
+                            if extra_output_key != cached_pending_tool_call_key:
+                                cached_pending_tool_call_key = extra_output_key
+                                cached_pending_tool_call_content = serialize_output(
+                                    cached_snapshot_output + extra_output
+                                )
+
+                            return cached_snapshot_output, cached_pending_tool_call_content
+
+                        return cached_snapshot_output, cached_snapshot_content
+
+                    async def emit_chat_completion_data(payload):
+                        nonlocal last_emitted_snapshot
+
+                        if not payload:
+                            return
+
+                        payload = dict(payload)
+                        snapshot_content = payload.get('content')
+                        if isinstance(snapshot_content, str):
+                            if snapshot_content == last_emitted_snapshot:
+                                payload.pop('content', None)
+                                payload.pop('output', None)
+                            else:
+                                last_emitted_snapshot = snapshot_content
+
+                        if payload:
                             await event_emitter(
                                 {
                                     'type': 'chat:completion',
-                                    'data': last_delta_data,
+                                    'data': payload,
                                 }
                             )
-                            delta_count = 0
-                            last_delta_data = None
 
                     current_sse_event = None
 
@@ -3876,6 +3971,7 @@ async def streaming_chat_response_handler(response, ctx):
                                 # Check for Responses API events (type field starts with "response.")
                                 elif data.get('type', '').startswith('response.'):
                                     output, response_metadata = handle_responses_streaming_event(data, output)
+                                    invalidate_stream_snapshot()
 
                                     # Emit citation sources from finalized output items
                                     # (mirrors Chat Completions annotation handling at delta level)
@@ -3911,9 +4007,10 @@ async def streaming_chat_response_handler(response, ctx):
                                                                 }
                                                             )
 
+                                    snapshot_output, snapshot_content = build_stream_snapshot()
                                     processed_data = {
-                                        'output': full_output(),
-                                        'content': serialize_output(full_output()),
+                                        'output': snapshot_output,
+                                        'content': snapshot_content,
                                     }
 
                                     # print(data)
@@ -3932,12 +4029,7 @@ async def streaming_chat_response_handler(response, ctx):
                                         processed_data.update(response_metadata)
                                         processed_data.pop('done', None)
 
-                                    await event_emitter(
-                                        {
-                                            'type': 'chat:completion',
-                                            'data': processed_data,
-                                        }
-                                    )
+                                    await emit_chat_completion_data(processed_data)
                                     continue
                                 else:
                                     choices = data.get('choices', [])
@@ -4051,7 +4143,16 @@ async def streaming_chat_response_handler(response, ctx):
                                         # Emit pending tool calls in real-time
                                         if response_tool_calls:
                                             # Flush any pending text first
-                                            await flush_pending_delta_data()
+                                            delta_count, last_delta_data = await flush_pending_stream_delta_data(
+                                                event_emitter=event_emitter,
+                                                delta_count=delta_count,
+                                                last_delta_data=last_delta_data,
+                                                save_pending=(
+                                                    save_pending_realtime_chat
+                                                    if ENABLE_REALTIME_CHAT_SAVE
+                                                    else None
+                                                ),
+                                            )
 
                                             # Build pending function_call output items for display
                                             pending_fc_items = []
@@ -4069,12 +4170,9 @@ async def streaming_chat_response_handler(response, ctx):
                                                     }
                                                 )
 
-                                            await event_emitter(
+                                            await emit_chat_completion_data(
                                                 {
-                                                    'type': 'chat:completion',
-                                                    'data': {
-                                                        'content': serialize_output(full_output() + pending_fc_items),
-                                                    },
+                                                    'content': build_stream_snapshot(pending_fc_items)[1],
                                                 }
                                             )
 
@@ -4132,7 +4230,8 @@ async def streaming_chat_response_handler(response, ctx):
                                                 }
                                             ]
 
-                                        data = {'content': serialize_output(full_output())}
+                                        invalidate_stream_snapshot()
+                                        data = {'content': build_stream_snapshot()[1]}
 
                                     if value:
                                         if (
@@ -4254,6 +4353,8 @@ async def streaming_chat_response_handler(response, ctx):
                                                     }
                                                 ]
 
+                                        invalidate_stream_snapshot()
+
                                         if DETECT_REASONING_TAGS:
                                             output, _ = tag_output_handler(
                                                 'reasoning',
@@ -4278,25 +4379,38 @@ async def streaming_chat_response_handler(response, ctx):
                                                 break
 
                                         if ENABLE_REALTIME_CHAT_SAVE:
-                                            # Save message in the database
-                                            await Chats.upsert_message_to_chat_by_id_and_message_id(
-                                                metadata['chat_id'],
-                                                metadata['message_id'],
-                                                {
-                                                    'content': serialize_output(full_output()),
-                                                    'output': full_output(),
-                                                },
-                                            )
-                                        else:
-                                            data = {
-                                                'content': serialize_output(full_output()),
+                                            snapshot_output, snapshot_content = build_stream_snapshot()
+                                            pending_realtime_save = {
+                                                'content': snapshot_content,
+                                                'output': snapshot_output,
                                             }
+                                        elif should_emit_stream_content_snapshot(
+                                            enable_realtime_chat_save=ENABLE_REALTIME_CHAT_SAVE,
+                                            has_reasoning_content=bool(reasoning_content),
+                                            detect_reasoning_tags=DETECT_REASONING_TAGS,
+                                            detect_code_interpreter=DETECT_CODE_INTERPRETER,
+                                            inside_tag_block=inside_tag_block,
+                                        ):
+                                            _, snapshot_content = build_stream_snapshot()
+                                            data = {
+                                                'content': snapshot_content,
+                                            }
+                                        else:
+                                            delta['content'] = value
 
                                 if delta:
                                     delta_count += 1
                                     last_delta_data = data
                                     if delta_count >= delta_chunk_size:
-                                        await flush_pending_delta_data(delta_chunk_size)
+                                        delta_count, last_delta_data = await flush_pending_stream_delta_data(
+                                            event_emitter=event_emitter,
+                                            delta_count=delta_count,
+                                            last_delta_data=last_delta_data,
+                                            threshold=delta_chunk_size,
+                                            save_pending=(
+                                                save_pending_realtime_chat if ENABLE_REALTIME_CHAT_SAVE else None
+                                            ),
+                                        )
                                 else:
                                     await event_emitter(
                                         {
@@ -4311,7 +4425,12 @@ async def streaming_chat_response_handler(response, ctx):
                             else:
                                 log.debug(f'Error: {e}')
                                 continue
-                    await flush_pending_delta_data()
+                    delta_count, last_delta_data = await flush_pending_stream_delta_data(
+                        event_emitter=event_emitter,
+                        delta_count=delta_count,
+                        last_delta_data=last_delta_data,
+                        save_pending=save_pending_realtime_chat if ENABLE_REALTIME_CHAT_SAVE else None,
+                    )
 
                     if output:
                         # Clean up the last message item
@@ -4342,6 +4461,13 @@ async def streaming_chat_response_handler(response, ctx):
                                     reasoning_item['ended_at'] - reasoning_item['started_at']
                                 )
                                 reasoning_item['status'] = 'completed'
+
+                        if ENABLE_REALTIME_CHAT_SAVE:
+                            pending_realtime_save = {
+                                'content': serialize_output(output),
+                                'output': output,
+                            }
+                            await save_pending_realtime_chat()
 
                     if response_tool_calls:
                         tool_calls.append(_split_tool_calls(response_tool_calls))
