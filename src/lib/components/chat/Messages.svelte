@@ -66,6 +66,7 @@
 	export let onSelect = (e) => {};
 
 	export let messagesCount: number | null = 8;
+	export let visibilityMode = 'compact';
 	let messagesLoading = false;
 	let rootMessageIds: string[] = [];
 
