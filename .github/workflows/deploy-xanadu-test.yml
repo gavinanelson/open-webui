@@ -7,8 +7,11 @@ on:
   push:
     branches:
       - testing
-  workflow_dispatch:
 
+# Testing deploys are intentionally branch-bound:
+# only pushes that update `testing` may run this workflow.
+# The `xanadu-testing` GitHub environment also has a custom
+# deployment branch policy allowing only `testing`.
 concurrency:
   group: open-webui-xanadu-test-deploy
   cancel-in-progress: true

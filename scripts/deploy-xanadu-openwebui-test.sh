@@ -30,7 +30,7 @@ PY
 )"
 fi
 
-if [[ "$BRANCH_NAME" != "testing" && "${ALLOW_OPENWEBUI_TEST_ANY_BRANCH:-}" != "1" ]]; then
+if [[ "$BRANCH_NAME" != "testing" ]]; then
   echo "Refusing to deploy test Open WebUI from branch '$BRANCH_NAME' (allowed: testing only)" >&2
   exit 1
 fi

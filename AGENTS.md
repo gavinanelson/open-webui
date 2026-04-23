@@ -23,6 +23,8 @@ This repository has two Xanadu deployments. Do not confuse them.
 - Production stack: `chat.yxanadu.com`, containers `hermes-open-webui` and `hermes-open-webui-pwa-proxy`, ports `3013/3012`, production data volume.
 - Testing stack: `chat-test.yxanadu.com`, containers `hermes-open-webui-test` and `hermes-open-webui-test-pwa-proxy`, ports `3023/3022`, separate test data volume.
 - Both stacks intentionally use the real Hermes API backends on ports `8642` and `8652`, so testing exercises the actual Hermes agent harness without touching Gavin's production Open WebUI chat/session data.
+- Deployment triggers are branch-locked: production redeploys only when `main` is pushed; testing redeploys only when `testing` is pushed. Do not add broad push triggers, manual deploy triggers, or shared deploy concurrency groups that could make one branch interrupt the other.
+- GitHub environment branch policies mirror this: `xanadu-production` allows only `main`, and `xanadu-testing` allows only `testing`.
 
 ## Recommended workflow
 

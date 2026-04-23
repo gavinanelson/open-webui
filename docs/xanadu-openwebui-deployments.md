@@ -7,6 +7,8 @@ Gavin's Open WebUI fork has two separate deployments.
 - Branch: `testing`
 - URL: `https://chat-test.yxanadu.com`
 - Workflow: `.github/workflows/deploy-xanadu-test.yml`
+- Trigger: push to `testing` only; no manual/broad push redeploy trigger
+- GitHub environment: `xanadu-testing`, custom deployment branch policy `testing` only
 - Script: `scripts/deploy-xanadu-openwebui-test.sh`
 - Backend container: `hermes-open-webui-test`
 - Proxy container: `hermes-open-webui-test-pwa-proxy`
@@ -20,6 +22,8 @@ Use this deployment for all normal development, experiments, and Hermes agent ha
 - Branch: `main`
 - URL: `https://chat.yxanadu.com`
 - Workflow: `.github/workflows/deploy-xanadu.yml`
+- Trigger: push to `main` only; no manual/broad push redeploy trigger
+- GitHub environment: `xanadu-production`, custom deployment branch policy `main` only
 - Script: `scripts/deploy-xanadu-openwebui.sh`
 - Backend container: `hermes-open-webui`
 - Proxy container: `hermes-open-webui-pwa-proxy`
