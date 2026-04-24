@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { slide } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
 	import equal from 'fast-deep-equal';
 
 	import StatusItem from './StatusHistory/StatusItem.svelte';
@@ -154,9 +152,6 @@
 
 	const setViewMode = (mode: ViewMode) => {
 		viewMode = mode;
-		try {
-			localStorage.setItem('chat-status-view-mode', viewMode);
-		} catch {}
 	};
 
 	const cycleViewMode = () => {
@@ -174,15 +169,9 @@
 	$: startedAt = history.map(timestampOf).find(Boolean) ?? timestampOf(status) ?? now;
 	$: elapsed = formatElapsed(((active ? now : (finishedAt ?? now)) - startedAt) / 1000);
 	$: expanded = viewMode !== 'compact';
-	$: if (expand && viewMode === 'compact') setViewMode('steps');
 
 	onMount(() => {
-		try {
-			const stored = localStorage.getItem('chat-status-view-mode');
-			setViewMode(clampMode(stored ?? visibilityMode));
-		} catch {
-			setViewMode(clampMode(visibilityMode));
-		}
+		setViewMode(expand ? clampMode(visibilityMode) : 'compact');
 		timer = setInterval(() => {
 			if (active) now = Date.now();
 		}, 1000);
@@ -248,7 +237,6 @@
 			<!-- Body: timeline (no rail, just rows) -->
 			{#if expanded}
 				<div
-					transition:slide={{ duration: 220, easing: quintOut, axis: 'y' }}
 					class="border-t border-gray-200/70 dark:border-white/[0.05]"
 				>
 					<ul class="px-2.5 py-1.5">

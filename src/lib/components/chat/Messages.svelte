@@ -74,7 +74,7 @@
 	// Off-screen message unloading. Heights are tracked per message, and the
 	// visible window is derived from cached layout data instead of scroll-time
 	// DOM measurement.
-	const OVERSCAN = 3;
+	const OVERSCAN = 6;
 	const DEFAULT_HEIGHT = 150;
 	let visibleStart = 0;
 	let visibleEnd = 0;
@@ -299,7 +299,19 @@
 			return;
 		}
 
+		const previousHeight = messageHeights.get(messageId);
+		const messageIndex = messages.findIndex((message) => message.id === messageId);
+		const heightDelta = previousHeight !== undefined ? height - previousHeight : 0;
+
 		messageHeights = updateMessageHeight(messageHeights, messageId, height);
+
+		if (heightDelta !== 0 && messageIndex !== -1 && messageIndex < visibleStart) {
+			const element = document.getElementById('messages-container');
+			if (element) {
+				element.scrollTop += heightDelta;
+			}
+		}
+
 		scheduleVirtualizationRefresh();
 	};
 

@@ -5,9 +5,6 @@
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 
-	import { slide } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
-
 	import ChevronUp from '../icons/ChevronUp.svelte';
 	import ChevronDown from '../icons/ChevronDown.svelte';
 	import Spinner from './Spinner.svelte';
@@ -174,7 +171,7 @@
 		</div>
 
 		{#if open}
-			<div transition:slide={{ duration: 300, easing: quintOut, axis: 'y' }}>
+			<div>
 				<div class="border border-gray-50 dark:border-gray-850/30 rounded-2xl my-1.5 p-3 space-y-3">
 					<!-- Input -->
 					{#if args}
