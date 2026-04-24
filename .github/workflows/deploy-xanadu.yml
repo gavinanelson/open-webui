@@ -13,9 +13,46 @@ concurrency:
   group: open-webui-xanadu-deploy
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
+  build-prod-image:
+    name: Build production image off-host
+    # Keep the heavy Docker/Node build off xanadu-host so production deploys
+    # do not peg the Mac while Gavin is using it.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:xanadu-prod-${{ github.sha }}
+          build-args: |
+            BUILD_HASH=${{ github.sha }}
+            USE_SLIM=true
+            NODE_MAX_OLD_SPACE_SIZE=4096
+
   deploy:
     name: Deploy Open WebUI to xanadu-host
+    needs: build-prod-image
     environment:
       name: xanadu-production
       url: https://chat.yxanadu.com
@@ -28,11 +65,19 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+      packages: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Show deploy target
         run: |
@@ -42,6 +87,7 @@ jobs:
       - name: Deploy to xanadu-host
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
+          OPENWEBUI_PROD_IMAGE: ghcr.io/${{ github.repository }}:xanadu-prod-${{ github.sha }}
         run: |
           chmod +x scripts/deploy-xanadu-openwebui.sh
           ./scripts/deploy-xanadu-openwebui.sh

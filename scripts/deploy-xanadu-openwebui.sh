@@ -11,6 +11,7 @@ SYNC_SCRIPT="$DEPLOY_ROOT/sync_hermes_native.py"
 DEPLOY_DOC="$DEPLOY_ROOT/DEPLOYMENT.md"
 IMAGE_NAME="open-webui-hermes-runtime-clean"
 IMAGE_TAG="latest"
+DEPLOY_IMAGE="${OPENWEBUI_PROD_IMAGE:-${IMAGE_NAME}:${IMAGE_TAG}}"
 FULL_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 SHORT_SHA="$(git -C "$REPO_ROOT" rev-parse --short=9 HEAD)"
 BRANCH_NAME="${GITHUB_REF_NAME:-$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)}"
@@ -56,8 +57,30 @@ storage_maintenance() {
 
 storage_maintenance preflight
 
-echo "Building $IMAGE_NAME:$SHORT_SHA and $IMAGE_NAME:$IMAGE_TAG from $BRANCH_NAME @ $SHORT_SHA"
-docker build -t "$IMAGE_NAME:$SHORT_SHA" -t "$IMAGE_NAME:$IMAGE_TAG" "$REPO_ROOT"
+echo "Preparing $IMAGE_NAME:$SHORT_SHA and $IMAGE_NAME:$IMAGE_TAG from $BRANCH_NAME @ $SHORT_SHA"
+if [[ -n "${OPENWEBUI_PROD_IMAGE:-}" ]]; then
+  echo "Using off-host built image for production deploy: $OPENWEBUI_PROD_IMAGE"
+  docker pull "$OPENWEBUI_PROD_IMAGE"
+  docker tag "$OPENWEBUI_PROD_IMAGE" "$IMAGE_NAME:$SHORT_SHA"
+  docker tag "$OPENWEBUI_PROD_IMAGE" "$IMAGE_NAME:$IMAGE_TAG"
+elif [[ "${ALLOW_LOCAL_PROD_BUILD:-}" == "1" ]]; then
+  echo "ALLOW_LOCAL_PROD_BUILD=1 set; using constrained local fallback build."
+  echo "This path should be used only for emergency manual recovery, not normal production deploys."
+  DOCKER_BUILDKIT=0 docker build \
+    --memory="${OPENWEBUI_PROD_BUILD_MEMORY:-3g}" \
+    --memory-swap="${OPENWEBUI_PROD_BUILD_MEMORY_SWAP:-4g}" \
+    --build-arg BUILD_HASH="$FULL_SHA" \
+    --build-arg USE_SLIM=true \
+    --build-arg NODE_MAX_OLD_SPACE_SIZE="${OPENWEBUI_PROD_NODE_OLD_SPACE:-2048}" \
+    -t "$IMAGE_NAME:$SHORT_SHA" \
+    -t "$IMAGE_NAME:$IMAGE_TAG" \
+    "$REPO_ROOT"
+else
+  echo "Refusing local production Docker build on xanadu-host." >&2
+  echo "Set OPENWEBUI_PROD_IMAGE to an off-host-built GHCR image; normal GitHub production deploys do this automatically." >&2
+  echo "Emergency-only override: ALLOW_LOCAL_PROD_BUILD=1, with memory limits still applied." >&2
+  exit 64
+fi
 
 python3 - <<'PY' "$COMPOSE_FILE" "$IMAGE_NAME:$IMAGE_TAG"
 from pathlib import Path
@@ -95,7 +118,9 @@ The live `chat.yxanadu.com` app is now auto-deployed from Gavin's fork branch vi
 - app version: `{version}`
 
 ## Deployment method
-A repository self-hosted GitHub Actions runner on `xanadu-host` rebuilds and redeploys production Open WebUI on pushes to `main`.
+GitHub Actions builds the production image off-host and pushes it to GHCR. The
+self-hosted runner on `xanadu-host` only pulls that image and recreates the
+production containers on pushes to `main`.
 
 - runner name: `xanadu-host-open-webui-deploy`
 - workflow: `.github/workflows/deploy-xanadu.yml`
