@@ -11,6 +11,7 @@
 	import Wrench from '$lib/components/icons/Wrench.svelte';
 	import Code from '$lib/components/icons/Code.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
+	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 
 	export let statusHistory: any[] = [];
 	export let expand = false;
@@ -71,6 +72,26 @@
 		return 'default';
 	};
 
+	// Color palette per entry kind. Each returns { ring, bg, fg } classes for the icon disc.
+	const kindColor = (kind: EntryKind) => {
+		switch (kind) {
+			case 'reasoning':
+				return 'border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-400/30 dark:bg-amber-500/[0.12] dark:text-amber-300';
+			case 'browser':
+				return 'border-sky-200 bg-sky-50 text-sky-600 dark:border-sky-400/30 dark:bg-sky-500/[0.12] dark:text-sky-300';
+			case 'search':
+				return 'border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-400/30 dark:bg-indigo-500/[0.12] dark:text-indigo-300';
+			case 'snapshot':
+				return 'border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-400/30 dark:bg-violet-500/[0.12] dark:text-violet-300';
+			case 'code':
+				return 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-400/30 dark:bg-emerald-500/[0.12] dark:text-emerald-300';
+			case 'tool':
+				return 'border-gray-200 bg-gray-50 text-gray-600 dark:border-white/[0.10] dark:bg-white/[0.05] dark:text-gray-300';
+			default:
+				return 'border-gray-200 bg-white text-gray-500 dark:border-white/[0.10] dark:bg-white/[0.03] dark:text-gray-400';
+		}
+	};
+
 	const humanize = (s: string) =>
 		s
 			.replace(/[_-]+/g, ' ')
@@ -125,6 +146,11 @@
 		} catch {}
 	};
 
+	const cycleViewMode = () => {
+		const i = VIEW_MODES.indexOf(viewMode);
+		setViewMode(VIEW_MODES[(i + 1) % VIEW_MODES.length]);
+	};
+
 	$: if (!equal(statusHistory ?? [], history)) {
 		history = statusHistory ?? [];
 	}
@@ -156,147 +182,136 @@
 
 {#if history.length > 0 && status?.hidden !== true}
 	<div class="status-description w-full text-left text-sm">
-		<!-- Header: status pulse + elapsed + segmented control -->
-		<div class="flex items-start gap-3 py-1">
-			<!-- status indicator -->
-			<div class="relative mt-[7px] size-2 shrink-0">
-				{#if active}
-					<span class="absolute inset-0 animate-ping rounded-full bg-sky-400 opacity-60"></span>
-				{/if}
-				<span
-					class="absolute inset-0 rounded-full {active
-						? 'bg-sky-400'
-						: 'bg-gray-300 dark:bg-gray-600'}"
-				></span>
-			</div>
-
-			<div class="min-w-0 flex-1">
-				<div class="flex items-center justify-between gap-3">
-					<div class="min-w-0 flex-1 truncate text-[13px]">
-						<span
-							class="font-medium {active
-								? 'shimmer text-gray-700 dark:text-gray-200'
-								: 'text-gray-700 dark:text-gray-300'}"
-						>
-							{active ? 'Working' : 'Done'}
-						</span>
-						<span class="mx-1.5 text-gray-300 dark:text-gray-700">·</span>
-						<span class="text-gray-500 dark:text-gray-500">
-							{elapsed}
-						</span>
-						<span class="mx-1.5 text-gray-300 dark:text-gray-700">·</span>
-						<span class="text-gray-500 dark:text-gray-500">
-							{history.length}
-							{history.length === 1 ? 'step' : 'steps'}
-						</span>
-					</div>
-
-					<!-- Segmented mode control -->
-					<div
-						class="flex shrink-0 items-center gap-0.5 rounded-full bg-gray-100 p-0.5 text-[11px] dark:bg-white/[0.05]"
-					>
-						{#each VIEW_MODES as mode}
-							<button
-								type="button"
-								class="rounded-full px-2 py-0.5 transition {viewMode === mode
-									? 'bg-white text-gray-800 shadow-sm dark:bg-white/[0.10] dark:text-gray-100'
-									: 'text-gray-500 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-300'}"
-								on:click={() => setViewMode(mode)}
-							>
-								{VIEW_LABELS[mode]}
-							</button>
-						{/each}
-					</div>
+		<!-- Enclosing box -->
+		<div
+			class="overflow-hidden rounded-2xl border border-gray-200/80 bg-white/60 dark:border-white/[0.06] dark:bg-white/[0.02]"
+		>
+			<!-- Top cap: clickable, cycles modes -->
+			<button
+				type="button"
+				class="group flex w-full items-center gap-3 px-3.5 py-2 text-left transition hover:bg-gray-50 dark:hover:bg-white/[0.03]"
+				on:click={cycleViewMode}
+				aria-label="Cycle status detail level"
+			>
+				<!-- pulse dot -->
+				<div class="relative size-2 shrink-0">
+					{#if active}
+						<span class="absolute inset-0 animate-ping rounded-full bg-sky-400 opacity-60"></span>
+					{/if}
+					<span
+						class="absolute inset-0 rounded-full {active
+							? 'bg-sky-400'
+							: 'bg-gray-300 dark:bg-gray-600'}"
+					></span>
 				</div>
 
-				<!-- Current status summary (only in compact) -->
-				{#if !expanded}
-					<div class="mt-0.5 line-clamp-1 text-[13px] text-gray-500 dark:text-gray-400">
-						<StatusItem {status} compact={true} done={!active} />
+				<!-- meta -->
+				<div class="min-w-0 flex-1 truncate text-[13px]">
+					<span
+						class="font-medium {active
+							? 'shimmer text-gray-700 dark:text-gray-200'
+							: 'text-gray-700 dark:text-gray-300'}"
+					>
+						{active ? 'Working' : 'Done'}
+					</span>
+					<span class="mx-1.5 text-gray-300 dark:text-gray-700">·</span>
+					<span class="text-gray-500 dark:text-gray-500">{elapsed}</span>
+					<span class="mx-1.5 text-gray-300 dark:text-gray-700">·</span>
+					<span class="text-gray-500 dark:text-gray-500">
+						{history.length}
+						{history.length === 1 ? 'step' : 'steps'}
+					</span>
+				</div>
+
+				<!-- mode hint + chevron -->
+				<div class="flex shrink-0 items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500">
+					<span class="font-medium uppercase tracking-wide">{VIEW_LABELS[viewMode]}</span>
+					<div class="transition-transform duration-200 {expanded ? 'rotate-180' : ''}">
+						<ChevronDown className="size-3.5" strokeWidth="2.5" />
 					</div>
-				{/if}
-			</div>
-		</div>
+				</div>
+			</button>
 
-		<!-- Timeline body -->
-		{#if expanded}
-			<div
-				transition:slide={{ duration: 220, easing: quintOut, axis: 'y' }}
-				class="relative mt-1 pl-[7px]"
-			>
-				<!-- vertical rail -->
+			<!-- Body: timeline (no rail, just rows) -->
+			{#if expanded}
 				<div
-					class="absolute left-[17px] top-3 bottom-3 w-px bg-gray-200 dark:bg-white/[0.08]"
-					aria-hidden="true"
-				></div>
+					transition:slide={{ duration: 220, easing: quintOut, axis: 'y' }}
+					class="border-t border-gray-200/70 dark:border-white/[0.05]"
+				>
+					<ul class="px-3 py-2">
+						{#each history as entry, idx}
+							{@const kind = entryKind(entry)}
+							{@const title = entryTitle(entry)}
+							{@const body = entryBody(entry)}
+							{@const entryDone = isDone(entry) || messageDone}
+							{@const isReasoning = kind === 'reasoning'}
 
-				<ul class="relative space-y-0">
-					{#each history as entry, idx}
-						{@const kind = entryKind(entry)}
-						{@const title = entryTitle(entry)}
-						{@const body = entryBody(entry)}
-						{@const entryDone = isDone(entry) || messageDone}
-						{@const isReasoning = kind === 'reasoning'}
-
-						<li class="relative flex gap-3 py-1.5">
-							<!-- icon disc on the rail -->
-							<div
-								class="relative z-10 mt-0.5 flex size-[22px] shrink-0 items-center justify-center rounded-full border transition
-									{!entryDone
-									? 'border-sky-300 bg-sky-50 text-sky-600 dark:border-sky-400/40 dark:bg-sky-500/[0.12] dark:text-sky-300'
-									: isReasoning
-										? 'border-gray-200 bg-white text-gray-600 dark:border-white/[0.08] dark:bg-gray-900 dark:text-gray-300'
-										: 'border-gray-200 bg-white text-gray-400 dark:border-white/[0.08] dark:bg-gray-900 dark:text-gray-500'}"
-							>
-								{#if isReasoning}
-									<Sparkles className="size-3" strokeWidth="2" />
-								{:else if kind === 'browser'}
-									<GlobeAlt className="size-3" strokeWidth="2" />
-								{:else if kind === 'search'}
-									<Search className="size-3" strokeWidth="2" />
-								{:else if kind === 'snapshot'}
-									<Camera className="size-3" strokeWidth="2" />
-								{:else if kind === 'code'}
-									<Code className="size-3" strokeWidth="2" />
-								{:else if kind === 'tool'}
-									<Wrench className="size-3" strokeWidth="2" />
-								{:else}
-									<span class="size-1.5 rounded-full bg-current"></span>
-								{/if}
-							</div>
-
-							<!-- content -->
-							<div class="min-w-0 flex-1 pb-0.5">
-								<div class="flex items-baseline gap-2 text-[13px] leading-[22px]">
-									<span
-										class="truncate {!entryDone ? 'shimmer' : ''} {isReasoning
-											? 'text-gray-700 dark:text-gray-200'
-											: 'text-gray-800 dark:text-gray-100'} font-medium"
-									>
-										{title}
-									</span>
+							<li class="flex items-start gap-3 py-1.5">
+								<!-- icon disc -->
+								<div
+									class="relative mt-0.5 flex size-[22px] shrink-0 items-center justify-center rounded-full border {kindColor(
+										kind
+									)} {!entryDone ? 'ring-2 ring-sky-300/40 dark:ring-sky-400/30' : ''}"
+								>
+									{#if isReasoning}
+										<Sparkles className="size-3" strokeWidth="2" />
+									{:else if kind === 'browser'}
+										<GlobeAlt className="size-3" strokeWidth="2" />
+									{:else if kind === 'search'}
+										<Search className="size-3" strokeWidth="2" />
+									{:else if kind === 'snapshot'}
+										<Camera className="size-3" strokeWidth="2" />
+									{:else if kind === 'code'}
+										<Code className="size-3" strokeWidth="2" />
+									{:else if kind === 'tool'}
+										<Wrench className="size-3" strokeWidth="2" />
+									{:else}
+										<span class="size-1.5 rounded-full bg-current"></span>
+									{/if}
 								</div>
 
-								{#if viewMode === 'trace' && body}
-									{#if isReasoning}
-										<div
-											class="mt-1 border-l-2 border-gray-200 pl-3 text-[13px] italic leading-6 text-gray-600 dark:border-white/[0.12] dark:text-gray-300"
+								<!-- content -->
+								<div class="min-w-0 flex-1 pb-0.5">
+									<div class="flex items-baseline gap-2 text-[13px] leading-[22px]">
+										<span
+											class="truncate font-medium {!entryDone
+												? 'shimmer'
+												: ''} text-gray-800 dark:text-gray-100"
 										>
-											<div class="whitespace-pre-wrap break-words">{body}</div>
-										</div>
-									{:else}
-										<div
-											class="mt-0.5 break-all font-mono text-[11.5px] leading-5 text-gray-500 dark:text-gray-500"
-										>
-											{body}
-										</div>
+											{title}
+										</span>
+									</div>
+
+									{#if viewMode === 'trace' && body}
+										{#if isReasoning}
+											<div
+												class="mt-1 rounded-md border-l-2 border-amber-300 bg-amber-50/50 px-3 py-1.5 text-[13px] italic leading-6 text-gray-700 dark:border-amber-400/50 dark:bg-amber-500/[0.06] dark:text-gray-200"
+											>
+												<div class="whitespace-pre-wrap break-words">{body}</div>
+											</div>
+										{:else}
+											<div
+												class="mt-0.5 break-all font-mono text-[11.5px] leading-5 text-gray-500 dark:text-gray-500"
+											>
+												{body}
+											</div>
+										{/if}
 									{/if}
-								{/if}
-							</div>
-						</li>
-					{/each}
-				</ul>
-			</div>
-		{/if}
+								</div>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{:else}
+				<!-- Bottom cap in compact mode: latest status one-liner -->
+				<div
+					class="border-t border-gray-200/70 px-3.5 py-1.5 text-[12.5px] text-gray-500 dark:border-white/[0.05] dark:text-gray-400"
+				>
+					<div class="line-clamp-1">
+						<StatusItem {status} compact={true} done={!active} />
+					</div>
+				</div>
+			{/if}
+		</div>
 	</div>
 {/if}
