@@ -91,6 +91,7 @@ from open_webui.routers import (
     folders,
     configs,
     groups,
+    hermes,
     files,
     functions,
     memories,
@@ -549,6 +550,8 @@ from open_webui.utils.embeddings import generate_embeddings
 from open_webui.utils.middleware import (
     build_hermes_status_payload,
     build_chat_response_context,
+    load_messages_from_db,
+    process_messages_with_output,
     process_chat_payload,
     process_chat_response,
 )
@@ -1412,6 +1415,7 @@ app.include_router(audio.router, prefix='/api/v1/audio', tags=['audio'])
 app.include_router(retrieval.router, prefix='/api/v1/retrieval', tags=['retrieval'])
 
 app.include_router(configs.router, prefix='/api/v1/configs', tags=['configs'])
+app.include_router(hermes.router, prefix='/api/v1/hermes', tags=['hermes'])
 
 app.include_router(auths.router, prefix='/api/v1/auths', tags=['auths'])
 app.include_router(users.router, prefix='/api/v1/users', tags=['users'])
@@ -1567,6 +1571,29 @@ def _normalize_hermes_content(content):
     return str(content or '')
 
 
+async def _resolve_hermes_messages(form_data: dict, metadata: dict) -> list[dict]:
+    messages = list(form_data.get('messages') or [])
+    user_message = metadata.get('user_message') or form_data.get('user_message') or form_data.get('parent_message')
+    chat_id = metadata.get('chat_id') or form_data.get('chat_id')
+    user_message_id = metadata.get('user_message_id') or (user_message.get('id') if isinstance(user_message, dict) else None)
+
+    if chat_id and user_message_id and not str(chat_id).startswith('local:'):
+        db_messages = await load_messages_from_db(chat_id, user_message_id)
+        if db_messages:
+            system_messages = [msg for msg in messages if msg.get('role') == 'system']
+            messages = [*system_messages, *db_messages]
+
+    if not messages and isinstance(user_message, dict):
+        messages = [user_message]
+
+    if not messages:
+        fallback_content = form_data.get('input') or form_data.get('prompt') or form_data.get('content')
+        if fallback_content:
+            messages = [{'role': 'user', 'content': fallback_content}]
+
+    return process_messages_with_output(messages)
+
+
 def _is_native_hermes_model(request: Request, model_id: str | None):
     if not model_id:
         return False
@@ -1601,7 +1628,7 @@ async def run_native_hermes_chat(request: Request, form_data: dict, metadata: di
     if not event_emitter:
         raise Exception('No chat event emitter available for Hermes run')
 
-    messages = form_data.get('messages') or []
+    messages = await _resolve_hermes_messages(form_data, metadata)
     if not messages:
         raise Exception('Hermes run requires at least one message')
 
