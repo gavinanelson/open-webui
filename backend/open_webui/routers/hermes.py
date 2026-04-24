@@ -120,6 +120,52 @@ def _dedupe_options(options: list[dict[str, str]]) -> list[dict[str, str]]:
     return result
 
 
+def _hermes_catalog_model_options(catalog: dict[str, Any]) -> list[dict[str, str]]:
+    models = catalog.get('models') if isinstance(catalog, dict) else None
+    if not isinstance(models, list):
+        return []
+
+    provider = str(catalog.get('provider') or '').strip() if isinstance(catalog, dict) else ''
+    result = []
+    for model in models:
+        if isinstance(model, dict):
+            value = str(model.get('id') or model.get('value') or '').strip()
+            label = str(model.get('label') or value).strip()
+            source = str(model.get('source') or '').strip()
+        else:
+            value = str(model or '').strip()
+            label = value
+            source = ''
+        if not value:
+            continue
+        result.append(
+            {
+                'value': value,
+                'label': label or value,
+                'description': source or (f'{provider} model' if provider else 'Hermes model'),
+            }
+        )
+    return result
+
+
+def _compat_model_options(models_payload: dict[str, Any] | list[Any]) -> list[dict[str, str]]:
+    result = []
+    for model in (models_payload.get('data') if isinstance(models_payload, dict) else []) or []:
+        if not isinstance(model, dict) or not model.get('id'):
+            continue
+        model_id = str(model['id'])
+        if model_id == 'hermes-agent':
+            continue
+        result.append(
+            {
+                'value': model_id,
+                'label': str(model.get('name') or model_id),
+                'description': str(model.get('owned_by') or 'Hermes compatibility model'),
+            }
+        )
+    return result
+
+
 def _schema_options(schema: dict[str, Any], key: str) -> list[dict[str, str]]:
     field = (schema.get('fields') or {}).get(key) if isinstance(schema, dict) else None
     values = field.get('options') if isinstance(field, dict) else None
@@ -184,23 +230,15 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
         except Exception:
             return default
 
-    models_payload, model_info, config, schema = await asyncio.gather(
+    models_payload, catalog, model_info, config, schema = await asyncio.gather(
         safe(_fetch_json(f'{api_base}/v1/models'), {}),
+        safe(_fetch_json(f'{dashboard_base}/api/models/available'), {}),
         safe(_fetch_json(f'{dashboard_base}/api/model/info'), {}),
         safe(_fetch_json(f'{dashboard_base}/api/config'), {}),
         safe(_fetch_json(f'{dashboard_base}/api/config/schema'), {}),
     )
 
-    model_options = []
-    for model in (models_payload.get('data') if isinstance(models_payload, dict) else []) or []:
-        if isinstance(model, dict) and model.get('id'):
-            model_options.append(
-                {
-                    'value': str(model['id']),
-                    'label': str(model.get('name') or model.get('id')),
-                    'description': str(model.get('owned_by') or 'Hermes model'),
-                }
-            )
+    model_options = _hermes_catalog_model_options(catalog) or _compat_model_options(models_payload)
 
     configured_model = (
         (model_info.get('model') if isinstance(model_info, dict) else None)
@@ -275,7 +313,8 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
         'fast_options': _dedupe_options(fast_options),
         'config_options': config_options,
         'sources': {
-            'models': f'{api_base}/v1/models',
+            'models': f'{dashboard_base}/api/models/available',
+            'compat_models': f'{api_base}/v1/models',
             'model_info': f'{dashboard_base}/api/model/info',
             'config': f'{dashboard_base}/api/config',
             'schema': f'{dashboard_base}/api/config/schema',

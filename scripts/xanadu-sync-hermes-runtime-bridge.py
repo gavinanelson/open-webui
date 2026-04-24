@@ -30,17 +30,6 @@ def candidate_roots() -> list[Path]:
         if (root / "gateway/platforms/api_server.py").exists():
             found.append(root)
 
-    if found:
-        return found
-
-    # Bounded fallback for drifted installs. Avoid a full-disk scan.
-    for base in (Path("/Users/gavin/.local"), Path("/Users/gavin/.hermes"), Path("/Users/gavin/projects")):
-        if not base.exists():
-            continue
-        for path in base.rglob("gateway/platforms/api_server.py"):
-            root = path.parents[2]
-            if root not in found:
-                found.append(root)
     return found
 
 
@@ -141,6 +130,75 @@ def patch_web_server(path: Path) -> bool:
         '        "options": ["", "none", "minimal", "low", "medium", "high", "xhigh"],\n'
         "    },",
     )
+    text = text.replace(
+        '    "/api/model/info",\n})',
+        '    "/api/model/info",\n    "/api/models/available",\n})',
+    )
+    if '@app.get("/api/models/available")' not in text:
+        marker = (
+            "    except Exception:\n"
+            "        _log.exception(\"GET /api/model/info failed\")\n"
+            "        return dict(_EMPTY_MODEL_INFO)\n\n\n"
+            "def _denormalize_config_from_web"
+        )
+        endpoint = (
+            "    except Exception:\n"
+            "        _log.exception(\"GET /api/model/info failed\")\n"
+            "        return dict(_EMPTY_MODEL_INFO)\n\n\n"
+            "@app.get(\"/api/models/available\")\n"
+            "def get_available_models():\n"
+            "    \"\"\"Return the actual provider model catalog for native clients.\"\"\"\n"
+            "    try:\n"
+            "        info = get_model_info()\n"
+            "        provider = str(info.get(\"provider\") or \"\").strip()\n"
+            "        current_model = str(info.get(\"model\") or \"\").strip()\n"
+            "        source = \"\"\n"
+            "        models = []\n\n"
+            "        if provider:\n"
+            "            try:\n"
+            "                from agent.models_dev import list_agentic_models\n"
+            "                models = list_agentic_models(provider)\n"
+            "                source = \"models.dev-agentic\"\n"
+            "            except Exception:\n"
+            "                models = []\n\n"
+            "            if not models:\n"
+            "                try:\n"
+            "                    from agent.models_dev import list_provider_models\n"
+            "                    models = list_provider_models(provider)\n"
+            "                    source = \"models.dev-provider\"\n"
+            "                except Exception:\n"
+            "                    models = []\n\n"
+            "            if not models:\n"
+            "                try:\n"
+            "                    from hermes_cli.models import OPENROUTER_MODELS, _PROVIDER_MODELS\n"
+            "                    if provider in {\"openrouter\", \"nous\"}:\n"
+            "                        models = [model_id for model_id, _description in OPENROUTER_MODELS]\n"
+            "                    else:\n"
+            "                        models = list(_PROVIDER_MODELS.get(provider, []))\n"
+            "                    source = \"hermes-curated\"\n"
+            "                except Exception:\n"
+            "                    models = []\n\n"
+            "        ordered = []\n"
+            "        if current_model:\n"
+            "            ordered.append(current_model)\n"
+            "        ordered.extend(str(model or \"\").strip() for model in models)\n"
+            "        deduped = [model for model in dict.fromkeys(ordered) if model]\n\n"
+            "        return {\n"
+            "            \"provider\": provider,\n"
+            "            \"current_model\": current_model,\n"
+            "            \"models\": [\n"
+            "                {\"id\": model, \"label\": model, \"source\": source or provider or \"hermes\"}\n"
+            "                for model in deduped\n"
+            "            ],\n"
+            "        }\n"
+            "    except Exception:\n"
+            "        _log.exception(\"GET /api/models/available failed\")\n"
+            "        return {\"provider\": \"\", \"current_model\": \"\", \"models\": []}\n\n\n"
+            "def _denormalize_config_from_web"
+        )
+        text, inserted = replace_once(text, marker, endpoint)
+        if not inserted:
+            print(f"web_server model catalog endpoint marker not found: {path}")
     if text == original:
         print(f"web_server already patched or unknown shape: {path}")
         return False
