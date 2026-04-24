@@ -72,23 +72,23 @@
 		return 'default';
 	};
 
-	// Color palette per entry kind. Each returns { ring, bg, fg } classes for the icon disc.
+	// Flat icon stroke color per kind — no backgrounds, no rings.
 	const kindColor = (kind: EntryKind) => {
 		switch (kind) {
 			case 'reasoning':
-				return 'border-amber-200 bg-amber-50 text-amber-600 dark:border-amber-400/30 dark:bg-amber-500/[0.12] dark:text-amber-300';
+				return 'text-amber-500 dark:text-amber-400';
 			case 'browser':
-				return 'border-sky-200 bg-sky-50 text-sky-600 dark:border-sky-400/30 dark:bg-sky-500/[0.12] dark:text-sky-300';
+				return 'text-sky-500 dark:text-sky-400';
 			case 'search':
-				return 'border-indigo-200 bg-indigo-50 text-indigo-600 dark:border-indigo-400/30 dark:bg-indigo-500/[0.12] dark:text-indigo-300';
+				return 'text-indigo-500 dark:text-indigo-400';
 			case 'snapshot':
-				return 'border-violet-200 bg-violet-50 text-violet-600 dark:border-violet-400/30 dark:bg-violet-500/[0.12] dark:text-violet-300';
+				return 'text-violet-500 dark:text-violet-400';
 			case 'code':
-				return 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-400/30 dark:bg-emerald-500/[0.12] dark:text-emerald-300';
+				return 'text-emerald-500 dark:text-emerald-400';
 			case 'tool':
-				return 'border-gray-200 bg-gray-50 text-gray-600 dark:border-white/[0.10] dark:bg-white/[0.05] dark:text-gray-300';
+				return 'text-gray-500 dark:text-gray-400';
 			default:
-				return 'border-gray-200 bg-white text-gray-500 dark:border-white/[0.10] dark:bg-white/[0.03] dark:text-gray-400';
+				return 'text-gray-400 dark:text-gray-500';
 		}
 	};
 
@@ -259,27 +259,27 @@
 							{@const entryDone = isDone(entry) || messageDone}
 							{@const isReasoning = kind === 'reasoning'}
 
-							<li class="flex items-start gap-2.5 py-0.5">
-								<!-- icon disc (bubbly: solid fill, no border) -->
+							<li class="flex items-start gap-2 py-0.5">
+								<!-- flat colored icon, no disc, no ring -->
 								<div
-									class="relative mt-[3px] flex size-[18px] shrink-0 items-center justify-center rounded-full {kindColor(
+									class="mt-[3px] flex size-3.5 shrink-0 items-center justify-center {kindColor(
 										kind
-									)} {!entryDone ? 'ring-2 ring-sky-300/50 dark:ring-sky-400/40' : ''}"
+									)} {!entryDone ? 'animate-pulse' : ''}"
 								>
 									{#if isReasoning}
-										<Sparkles className="size-[11px]" strokeWidth="2.2" />
+										<Sparkles className="size-3.5" strokeWidth="2" />
 									{:else if kind === 'browser'}
-										<GlobeAlt className="size-[11px]" strokeWidth="2.2" />
+										<GlobeAlt className="size-3.5" strokeWidth="2" />
 									{:else if kind === 'search'}
-										<Search className="size-[11px]" strokeWidth="2.2" />
+										<Search className="size-3.5" strokeWidth="2" />
 									{:else if kind === 'snapshot'}
-										<Camera className="size-[11px]" strokeWidth="2.2" />
+										<Camera className="size-3.5" strokeWidth="2" />
 									{:else if kind === 'code'}
-										<Code className="size-[11px]" strokeWidth="2.2" />
+										<Code className="size-3.5" strokeWidth="2" />
 									{:else if kind === 'tool'}
-										<Wrench className="size-[11px]" strokeWidth="2.2" />
+										<Wrench className="size-3.5" strokeWidth="2" />
 									{:else}
-										<span class="size-1.5 rounded-full bg-current"></span>
+										<span class="size-1 rounded-full bg-current"></span>
 									{/if}
 								</div>
 
@@ -298,7 +298,7 @@
 									{#if viewMode === 'trace' && body}
 										{#if isReasoning}
 											<div
-												class="mb-0.5 mt-1 rounded-lg border-l-2 border-amber-300 bg-amber-50/60 px-2.5 py-1 text-[12.5px] italic leading-[18px] text-gray-700 dark:border-amber-400/50 dark:bg-amber-500/[0.06] dark:text-gray-200"
+												class="mt-0.5 border-l-2 border-amber-300 pl-2.5 text-[12.5px] italic leading-[18px] text-gray-600 dark:border-amber-400/60 dark:text-gray-300"
 											>
 												<div class="whitespace-pre-wrap break-words">{body}</div>
 											</div>
