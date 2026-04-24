@@ -126,6 +126,7 @@ services:
       OPENAI_API_KEYS: \${OPENAI_API_KEY};\${OPENAI_API_KEY}
       HERMES_API_BASE_URL: http://host.docker.internal:8642
       HERMES_DASHBOARD_BASE_URL: http://host.docker.internal:9119
+      ENABLE_CHANNELS: "true"
       ENABLE_OLLAMA_API: "false"
       WEBUI_URL: ${PUBLIC_URL}
       RAG_EMBEDDING_MODEL_EAGER_LOAD: "false"
