@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { flyAndScale } from '$lib/utils/transitions';
-	import { tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 
 	/** Currently selected value */
 	export let value = '';
@@ -38,6 +38,7 @@
 
 	let triggerEl;
 	let contentEl;
+	let positionRAF: number | null = null;
 
 	$: selectedLabel = items.find((i) => i.value === value)?.label ?? placeholder;
 
@@ -71,6 +72,15 @@
 		}
 	}
 
+	function schedulePositionContent() {
+		if (!open || positionRAF !== null) return;
+
+		positionRAF = requestAnimationFrame(() => {
+			positionRAF = null;
+			positionContent();
+		});
+	}
+
 	async function toggleOpen() {
 		open = !open;
 		if (open) {
@@ -99,13 +109,19 @@
 		open = false;
 		onChange(value);
 	}
+
+	onDestroy(() => {
+		if (positionRAF !== null) {
+			cancelAnimationFrame(positionRAF);
+		}
+	});
 </script>
 
 <svelte:window
 	on:click={handleWindowClick}
 	on:keydown={handleKeydown}
-	on:scroll|capture={positionContent}
-	on:resize={positionContent}
+	on:scroll|capture={schedulePositionContent}
+	on:resize={schedulePositionContent}
 />
 
 <button

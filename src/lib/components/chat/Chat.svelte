@@ -138,6 +138,14 @@
 	let selectedModels = [''];
 	let atSelectedModel: Model | undefined;
 	let selectedModelIds = [];
+	let hermesRuntime = {
+		model: '',
+		modelLabel: 'Hermes model',
+		reasoning: '',
+		reasoningLabel: 'Reasoning',
+		fast: '',
+		fastLabel: 'Mode'
+	};
 	$: if (atSelectedModel !== undefined) {
 		selectedModelIds = [atSelectedModel.id];
 	} else {
@@ -452,11 +460,13 @@
 				const data = event?.data?.data ?? null;
 
 				if (type === 'status') {
-					if (message?.statusHistory) {
-						message.statusHistory.push(data);
-					} else {
-						message.statusHistory = [data];
-					}
+					const status = {
+						...(data ?? {}),
+						received_at: data?.received_at ?? Date.now() / 1000
+					};
+					message.statusHistory = [...(message?.statusHistory ?? []), status].slice(-100);
+					history.messages[event.message_id] = message;
+					history = history;
 				} else if (type === 'chat:completion') {
 					chatCompletionEventHandler(data, message, event.chat_id);
 				} else if (type === 'chat:tasks:cancel') {
@@ -1413,6 +1423,27 @@
 
 	let scrollRAF = null;
 	let contentsRAF = null;
+	let autoScrollRAF: number | null = null;
+
+	const updateAutoScroll = () => {
+		autoScrollRAF = null;
+		if (!messagesContainerElement) {
+			return;
+		}
+
+		autoScroll =
+			messagesContainerElement.scrollHeight - messagesContainerElement.scrollTop <=
+			messagesContainerElement.clientHeight + 5;
+	};
+
+	const handleMessagesScroll = () => {
+		if (autoScrollRAF !== null) {
+			return;
+		}
+
+		autoScrollRAF = requestAnimationFrame(updateAutoScroll);
+	};
+
 	const scheduleScrollToBottom = () => {
 		if (!scrollRAF) {
 			scrollRAF = requestAnimationFrame(async () => {
@@ -1421,6 +1452,18 @@
 			});
 		}
 	};
+
+	onDestroy(() => {
+		if (scrollRAF) {
+			cancelAnimationFrame(scrollRAF);
+		}
+		if (autoScrollRAF !== null) {
+			cancelAnimationFrame(autoScrollRAF);
+		}
+		if (contentsRAF) {
+			clearTimeout(contentsRAF);
+		}
+	});
 
 	let processingQueueChats = new Set<string>();
 
@@ -2337,6 +2380,7 @@
 						$user?.email
 					)
 				},
+				hermes_runtime: hermesRuntime,
 				model_item: $models.find((m) => m.id === model.id),
 
 				session_id: $socket?.id,
@@ -2355,7 +2399,7 @@
 								tags_generation: $settings?.autoTags ?? true
 							}
 						: {}),
-					follow_up_generation: $settings?.autoFollowUps ?? true
+					follow_up_generation: false
 				},
 
 				...(stream && (model.info?.meta?.capabilities?.usage ?? false)
@@ -2906,11 +2950,7 @@
 								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
 								id="messages-container"
 								bind:this={messagesContainerElement}
-								on:scroll={(e) => {
-									autoScroll =
-										messagesContainerElement.scrollHeight - messagesContainerElement.scrollTop <=
-										messagesContainerElement.clientHeight + 5;
-								}}
+								on:scroll={handleMessagesScroll}
 							>
 								<div class=" h-full w-full flex flex-col">
 									<Messages
@@ -2943,7 +2983,8 @@
 									bind:this={messageInput}
 									{history}
 									{taskIds}
-									{selectedModels}
+									bind:selectedModels
+									bind:hermesRuntime
 									bind:files
 									bind:prompt
 									bind:autoScroll
@@ -3023,7 +3064,8 @@
 							<div class="flex items-center h-full">
 								<Placeholder
 									{history}
-									{selectedModels}
+									bind:selectedModels
+									bind:hermesRuntime
 									bind:messageInput
 									bind:files
 									bind:prompt

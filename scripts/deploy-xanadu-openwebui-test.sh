@@ -59,6 +59,10 @@ fi
 storage_maintenance() {
   local phase="$1"
   local helper="/Users/gavin/xanadu-storage/scripts/docker-storage-maintenance.sh"
+  if [[ "${OPENWEBUI_TEST_SKIP_STORAGE_MAINTENANCE:-}" == "1" ]]; then
+    echo "Skipping test deploy storage maintenance ($phase): OPENWEBUI_TEST_SKIP_STORAGE_MAINTENANCE=1"
+    return 0
+  fi
   if [[ -x "$helper" ]]; then
     "$helper" "$phase" open-webui-test-deploy
   fi

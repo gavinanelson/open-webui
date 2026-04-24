@@ -45,6 +45,7 @@
 
 	let itemElement: HTMLDivElement | null = null;
 	let resizeObserver: ResizeObserver | null = null;
+	let heightRAF: number | null = null;
 	let message;
 	let parentMessage;
 
@@ -60,24 +61,38 @@
 		});
 	};
 
+	const scheduleReportHeight = () => {
+		if (heightRAF !== null) {
+			return;
+		}
+
+		heightRAF = requestAnimationFrame(() => {
+			heightRAF = null;
+			reportHeight();
+		});
+	};
+
 	onMount(() => {
 		if (!itemElement) {
 			return;
 		}
 
 		if (typeof ResizeObserver === 'undefined') {
-			void tick().then(reportHeight);
+			void tick().then(scheduleReportHeight);
 			return;
 		}
 
 		resizeObserver = new ResizeObserver(() => {
-			reportHeight();
+			scheduleReportHeight();
 		});
 		resizeObserver.observe(itemElement);
-		reportHeight();
+		scheduleReportHeight();
 
 		return () => {
 			resizeObserver?.disconnect();
+			if (heightRAF !== null) {
+				cancelAnimationFrame(heightRAF);
+			}
 		};
 	});
 </script>

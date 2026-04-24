@@ -38,7 +38,15 @@
 	export let autoScroll = false;
 
 	export let atSelectedModel: Model | undefined;
-	export let selectedModels: [''];
+	export let selectedModels: string[] = [''];
+	export let hermesRuntime = {
+		model: '',
+		modelLabel: 'Hermes model',
+		reasoning: '',
+		reasoningLabel: 'Reasoning',
+		fast: '',
+		fastLabel: 'Mode'
+	};
 
 	export let history;
 
@@ -212,7 +220,8 @@
 				<MessageInput
 					bind:this={messageInput}
 					{history}
-					{selectedModels}
+					bind:selectedModels
+					bind:hermesRuntime
 					bind:files
 					bind:prompt
 					bind:autoScroll

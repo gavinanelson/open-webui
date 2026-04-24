@@ -91,6 +91,7 @@ from open_webui.routers import (
     folders,
     configs,
     groups,
+    hermes,
     files,
     functions,
     memories,
@@ -547,7 +548,10 @@ from open_webui.utils.chat import (
 from open_webui.utils.actions import chat_action as chat_action_handler
 from open_webui.utils.embeddings import generate_embeddings
 from open_webui.utils.middleware import (
+    build_hermes_status_payload,
     build_chat_response_context,
+    load_messages_from_db,
+    process_messages_with_output,
     process_chat_payload,
     process_chat_response,
 )
@@ -1411,6 +1415,7 @@ app.include_router(audio.router, prefix='/api/v1/audio', tags=['audio'])
 app.include_router(retrieval.router, prefix='/api/v1/retrieval', tags=['retrieval'])
 
 app.include_router(configs.router, prefix='/api/v1/configs', tags=['configs'])
+app.include_router(hermes.router, prefix='/api/v1/hermes', tags=['hermes'])
 
 app.include_router(auths.router, prefix='/api/v1/auths', tags=['auths'])
 app.include_router(users.router, prefix='/api/v1/users', tags=['users'])
@@ -1550,6 +1555,209 @@ async def embeddings(request: Request, form_data: dict, user=Depends(get_verifie
     return await generate_embeddings(request, form_data, user)
 
 
+def _normalize_hermes_content(content):
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict) and item.get('type') in ('text', 'input_text', 'output_text'):
+                parts.append(str(item.get('text', '')))
+        return '\n'.join(part for part in parts if part)
+
+    return str(content or '')
+
+
+async def _resolve_hermes_messages(form_data: dict, metadata: dict) -> list[dict]:
+    messages = list(form_data.get('messages') or [])
+    user_message = metadata.get('user_message') or form_data.get('user_message') or form_data.get('parent_message')
+    chat_id = metadata.get('chat_id') or form_data.get('chat_id')
+    user_message_id = metadata.get('user_message_id') or (user_message.get('id') if isinstance(user_message, dict) else None)
+
+    if chat_id and user_message_id and not str(chat_id).startswith('local:'):
+        db_messages = await load_messages_from_db(chat_id, user_message_id)
+        if db_messages:
+            system_messages = [msg for msg in messages if msg.get('role') == 'system']
+            messages = [*system_messages, *db_messages]
+
+    if not messages and isinstance(user_message, dict):
+        messages = [user_message]
+
+    if not messages:
+        fallback_content = form_data.get('input') or form_data.get('prompt') or form_data.get('content')
+        if fallback_content:
+            messages = [{'role': 'user', 'content': fallback_content}]
+
+    return process_messages_with_output(messages)
+
+
+def _is_native_hermes_model(request: Request, model_id: str | None):
+    if not model_id:
+        return False
+
+    lowered = model_id.lower()
+    if lowered.startswith('hermes') or 'hermes-agent' in lowered:
+        return True
+
+    model = request.app.state.OPENAI_MODELS.get(model_id) if hasattr(request.app.state, 'OPENAI_MODELS') else None
+    if not model:
+        return False
+
+    try:
+        url = request.app.state.config.OPENAI_API_BASE_URLS[model.get('urlIdx')]
+    except Exception:
+        return False
+
+    return '8642' in url or '8652' in url or 'hermes' in url.lower()
+
+
+def _hermes_base_url_for_model(request: Request, model_id: str):
+    model = request.app.state.OPENAI_MODELS.get(model_id) if hasattr(request.app.state, 'OPENAI_MODELS') else None
+    url_idx = model.get('urlIdx') if model else 0
+    return request.app.state.config.OPENAI_API_BASE_URLS[url_idx].rstrip('/')
+
+
+async def run_native_hermes_chat(request: Request, form_data: dict, metadata: dict):
+    """Run Hermes through its structured /v1/runs event stream."""
+
+    model_id = form_data.get('model')
+    event_emitter = await get_event_emitter(metadata)
+    if not event_emitter:
+        raise Exception('No chat event emitter available for Hermes run')
+
+    messages = await _resolve_hermes_messages(form_data, metadata)
+    if not messages:
+        raise Exception('Hermes run requires at least one message')
+
+    user_message = next((msg for msg in reversed(messages) if msg.get('role') == 'user'), messages[-1])
+    user_input = _normalize_hermes_content(user_message.get('content'))
+    conversation_history = [
+        {
+            'role': str(msg.get('role')),
+            'content': _normalize_hermes_content(msg.get('content')),
+        }
+        for msg in messages
+        if msg is not user_message and msg.get('role') in ('system', 'user', 'assistant')
+    ]
+
+    base_url = _hermes_base_url_for_model(request, model_id)
+    headers = {'Content-Type': 'application/json'}
+    try:
+        model = request.app.state.OPENAI_MODELS.get(model_id) or {}
+        key = request.app.state.config.OPENAI_API_KEYS[model.get('urlIdx', 0)]
+    except Exception:
+        key = ''
+    if key:
+        headers['Authorization'] = f'Bearer {key}'
+
+    session = await get_session()
+    content = ''
+    usage = None
+    run_id = None
+    hermes_runtime = metadata.get('hermes_runtime') if isinstance(metadata.get('hermes_runtime'), dict) else {}
+    hermes_run_payload = {
+        'input': user_input,
+        'conversation_history': conversation_history,
+        'session_id': metadata.get('chat_id') or metadata.get('session_id'),
+    }
+    if hermes_runtime:
+        # Structured runtime settings from the native Hermes composer controls.
+        # These are intentionally not sent as slash-command chat text.
+        if hermes_runtime.get('model'):
+            hermes_run_payload['model'] = hermes_runtime.get('model')
+        if hermes_runtime.get('reasoning'):
+            hermes_run_payload['reasoning'] = hermes_runtime.get('reasoning')
+        if hermes_runtime.get('fast'):
+            hermes_run_payload['fast'] = hermes_runtime.get('fast')
+
+    async with session.post(
+        f'{base_url}/runs',
+        json=hermes_run_payload,
+        headers=headers,
+        ssl=AIOHTTP_CLIENT_SESSION_SSL,
+        timeout=aiohttp.ClientTimeout(total=30),
+    ) as response:
+        if response.status >= 400:
+            try:
+                error = await response.json()
+            except Exception:
+                error = await response.text()
+            raise Exception(f'Hermes run start failed: {error}')
+
+        run_data = await response.json()
+        run_id = run_data.get('run_id')
+        if not run_id:
+            raise Exception('Hermes run did not return a run_id')
+
+    async with session.get(
+        f'{base_url}/runs/{run_id}/events',
+        headers=headers,
+        ssl=AIOHTTP_CLIENT_SESSION_SSL,
+        timeout=aiohttp.ClientTimeout(total=None),
+    ) as response:
+        if response.status >= 400:
+            try:
+                error = await response.json()
+            except Exception:
+                error = await response.text()
+            raise Exception(f'Hermes event stream failed: {error}')
+
+        async for raw_line in response.content:
+            line = raw_line.decode('utf-8', 'replace').strip()
+            if not line or line.startswith(':') or not line.startswith('data:'):
+                continue
+
+            try:
+                event = json.loads(line[len('data:') :].strip())
+            except Exception:
+                continue
+
+            event_type = event.get('event') or 'event'
+
+            if event_type == 'message.delta':
+                content += event.get('delta') or ''
+                await event_emitter({'type': 'chat:completion', 'data': {'content': content}})
+                continue
+
+            if event_type == 'run.completed':
+                if event.get('output'):
+                    content = event.get('output')
+                usage = event.get('usage')
+                continue
+
+            if event_type == 'run.failed':
+                raise Exception(event.get('error') or 'Hermes run failed')
+
+            await event_emitter(
+                {
+                    'type': 'status',
+                    'data': build_hermes_status_payload(event, f'hermes.{event_type}'),
+                }
+            )
+
+    final_payload = {'content': content, 'done': True}
+    if usage:
+        final_payload['usage'] = usage
+
+    await event_emitter({'type': 'chat:completion', 'data': final_payload})
+
+    if metadata.get('chat_id') and metadata.get('message_id') and not metadata['chat_id'].startswith('local:'):
+        await Chats.upsert_message_to_chat_by_id_and_message_id(
+            metadata['chat_id'],
+            metadata['message_id'],
+            {
+                'content': content,
+                'done': True,
+                **({'usage': usage} if usage else {}),
+            },
+        )
+
+    return {'status': True, 'native': 'hermes', 'run_id': run_id}
+
+
 @app.post('/api/chat/completions')
 @app.post('/api/v1/chat/completions')  # Experimental: Compatibility with OpenAI API
 async def chat_completion(
@@ -1654,6 +1862,7 @@ async def chat_completion(
             'tool_servers': form_data.pop('tool_servers', None),
             'files': form_data.get('files', None),
             'features': form_data.get('features', {}),
+            'hermes_runtime': form_data.pop('hermes_runtime', None),
             'variables': form_data.get('variables', {}),
             'model': model,
             'direct': model_item.get('direct', False),
@@ -1840,6 +2049,9 @@ async def chat_completion(
 
     async def process_chat(request, form_data, user, metadata, model, tasks=None):
         try:
+            if _is_native_hermes_model(request, form_data.get('model')):
+                return await run_native_hermes_chat(request, form_data, metadata)
+
             form_data, metadata, events = await process_chat_payload(request, form_data, user, metadata, model)
 
             response = await chat_completion_handler(request, form_data, user)

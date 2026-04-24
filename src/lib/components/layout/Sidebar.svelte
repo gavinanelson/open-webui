@@ -76,9 +76,10 @@
 	import HotkeyHint from '../common/HotkeyHint.svelte';
 
 	const BREAKPOINT = 768;
-	const DEFAULT_PINNED_ITEMS = ['notes', 'workspace'];
+	const DEFAULT_PINNED_ITEMS = ['workspace'];
 
 	let scrollTop = 0;
+	let scrollTopRAF: number | null = null;
 
 	let navElement;
 	let shiftKey = false;
@@ -109,18 +110,9 @@
 	const isMenuItemVisible = (id) => {
 		switch (id) {
 			case 'notes':
-				return (
-					($config?.features?.enable_notes ?? false) &&
-					($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true))
-				);
+				return false;
 			case 'workspace':
-				return (
-					$user?.role === 'admin' ||
-					$user?.permissions?.workspace?.models ||
-					$user?.permissions?.workspace?.knowledge ||
-					$user?.permissions?.workspace?.prompts ||
-					$user?.permissions?.workspace?.tools
-				);
+				return true;
 			case 'automations':
 				return (
 					$config?.features?.enable_automations &&
@@ -141,7 +133,7 @@
 	const getMenuItemMeta = (id) => {
 		const items = {
 			notes: { label: 'Notes', href: '/notes', iconType: 'note' },
-			workspace: { label: 'Workspace', href: '/workspace', iconType: 'workspace' },
+			workspace: { label: 'Hermes', href: '/workspace', iconType: 'workspace' },
 			automations: { label: 'Automations', href: '/automations', iconType: 'automations' },
 			calendar: { label: 'Calendar', href: '/calendar', iconType: 'calendar' },
 			playground: { label: 'Playground', href: '/playground', iconType: 'playground' }
@@ -673,6 +665,24 @@
 		await tick();
 	};
 
+	const handleSidebarScroll = (event: Event) => {
+		if (scrollTopRAF !== null) {
+			return;
+		}
+
+		const target = event.currentTarget as HTMLElement;
+		scrollTopRAF = requestAnimationFrame(() => {
+			scrollTop = target.scrollTop;
+			scrollTopRAF = null;
+		});
+	};
+
+	onDestroy(() => {
+		if (scrollTopRAF !== null) {
+			cancelAnimationFrame(scrollTopRAF);
+		}
+	});
+
 	const isWindows = /Windows/i.test(navigator.userAgent);
 </script>
 
@@ -1053,13 +1063,7 @@
 
 			<div
 				class="relative flex flex-col flex-1 overflow-y-auto scrollbar-hidden pt-3 pb-3"
-				on:scroll={(e) => {
-					if (e.target.scrollTop === 0) {
-						scrollTop = 0;
-					} else {
-						scrollTop = e.target.scrollTop;
-					}
-				}}
+				on:scroll={handleSidebarScroll}
 			>
 				<div class="pb-1.5">
 					<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">

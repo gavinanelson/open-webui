@@ -94,10 +94,15 @@ jobs:
           curl -k -sS -o /tmp/openwebui-prod-canary-body -w 'prod_before code=%{http_code} total=%{time_total}\n' https://chat.yxanadu.com/
           grep -q 'restarts=' /tmp/openwebui-prod-canary-before.txt
 
+      - name: Sync Hermes runtime bridge on xanadu-host
+        run: |
+          python3 scripts/xanadu-sync-hermes-runtime-bridge.py
+
       - name: Deploy test stack to xanadu-host
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
           OPENWEBUI_TEST_IMAGE: ghcr.io/${{ github.repository }}:xanadu-test-${{ github.sha }}
+          OPENWEBUI_TEST_SKIP_STORAGE_MAINTENANCE: "1"
         run: |
           chmod +x scripts/deploy-xanadu-openwebui-test.sh
           ./scripts/deploy-xanadu-openwebui-test.sh

@@ -119,6 +119,95 @@ from open_webui.utils.response import normalize_usage
 from open_webui.utils.mcp.client import MCPClient
 
 
+def _compact_event_value(value, max_chars=4000):
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+
+    if isinstance(value, str):
+        return value if len(value) <= max_chars else f'{value[:max_chars]}...'
+
+    if isinstance(value, (list, dict)):
+        try:
+            encoded = json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)[:max_chars]
+
+        if len(encoded) <= max_chars:
+            return value
+
+        return f'{encoded[:max_chars]}...'
+
+    return str(value)[:max_chars]
+
+
+def build_hermes_status_payload(data: dict[str, Any], event_type: str):
+    inferred_action = data.get('action') or data.get('tool') or data.get('phase')
+    if not inferred_action:
+        if 'reasoning' in event_type:
+            inferred_action = 'reasoning'
+        elif event_type.startswith('hermes.tool.'):
+            inferred_action = event_type.rsplit('.', 1)[-1]
+        else:
+            inferred_action = 'progress'
+
+    done = bool(data.get('done', False))
+    status = str(data.get('status') or '').lower()
+    if status in {'completed', 'complete', 'done'} or event_type.endswith('.completed'):
+        done = True
+
+    payload = {
+        key: _compact_event_value(value)
+        for key, value in data.items()
+        if not key.startswith('_')
+    }
+
+    description = (
+        data.get('label')
+        or data.get('description')
+        or data.get('message')
+        or data.get('text')
+        or data.get('preview')
+        or data.get('tool')
+    )
+    description = description or 'Hermes is working'
+
+    emoji = data.get('emoji') or ''
+    if emoji and isinstance(description, str) and not description.startswith(str(emoji)):
+        description = f'{emoji} {description}'
+
+    payload.update(
+        {
+            'action': inferred_action,
+            'description': description,
+            'done': done,
+            'source': data.get('source') or 'hermes',
+            'event': event_type,
+            'received_at': time.time(),
+        }
+    )
+
+    return payload
+
+
+def is_hermes_status_event(event_type: str | None):
+    if not event_type or not event_type.startswith('hermes.'):
+        return False
+
+    return (
+        event_type == 'hermes.tool.progress'
+        or event_type.startswith('hermes.tool.')
+        or event_type.startswith('hermes.reasoning')
+        or event_type
+        in {
+            'hermes.status',
+            'hermes.progress',
+            'hermes.lifecycle',
+            'hermes.session',
+            'hermes.queue',
+        }
+    )
+
+
 from open_webui.config import (
     CACHE_DIR,
     DEFAULT_VOICE_MODE_PROMPT_TEMPLATE,
@@ -3804,6 +3893,7 @@ async def streaming_chat_response_handler(response, ctx):
                     snapshot_dirty = False
                     cached_pending_tool_call_key = None
                     cached_pending_tool_call_content = None
+                    last_reasoning_status_emit = 0
 
                     async def save_pending_realtime_chat():
                         nonlocal pending_realtime_save
@@ -3885,8 +3975,6 @@ async def streaming_chat_response_handler(response, ctx):
 
                     current_sse_event = None
 
-                    current_sse_event = None
-
                     async for line in response.body_iterator:
                         line = line.decode('utf-8', 'replace') if isinstance(line, bytes) else line
                         data = line
@@ -3909,19 +3997,11 @@ async def streaming_chat_response_handler(response, ctx):
                         try:
                             data = json.loads(data)
 
-                            if current_sse_event == 'hermes.tool.progress':
-                                description = data.get('label') or data.get('tool') or 'Hermes is working'
-                                emoji = data.get('emoji') or ''
-                                if emoji:
-                                    description = f"{emoji} {description}"
+                            if is_hermes_status_event(current_sse_event):
                                 await event_emitter(
                                     {
                                         'type': 'status',
-                                        'data': {
-                                            'action': data.get('tool', 'tool_progress'),
-                                            'description': description,
-                                            'done': False,
-                                        },
+                                        'data': build_hermes_status_payload(data, current_sse_event),
                                     }
                                 )
                                 current_sse_event = None
@@ -4188,6 +4268,7 @@ async def streaming_chat_response_handler(response, ctx):
                                         or delta.get('thinking')
                                     )
                                     if reasoning_content:
+                                        now_ts = time.time()
                                         if not output or output[-1].get('type') != 'reasoning':
                                             reasoning_item = {
                                                 'type': 'reasoning',
@@ -4216,6 +4297,27 @@ async def streaming_chat_response_handler(response, ctx):
                                                 }
                                             ]
 
+                                        if now_ts - last_reasoning_status_emit >= 1:
+                                            reasoning_text = ''.join(
+                                                part.get('text', '')
+                                                for part in reasoning_item.get('content', [])
+                                                if part.get('type') == 'output_text'
+                                            )
+                                            await event_emitter(
+                                                {
+                                                    'type': 'status',
+                                                    'data': build_hermes_status_payload(
+                                                        {
+                                                            'action': 'reasoning',
+                                                            'description': reasoning_text[-1200:],
+                                                            'text': reasoning_text[-1200:],
+                                                        },
+                                                        'hermes.reasoning.delta',
+                                                    ),
+                                                }
+                                            )
+                                            last_reasoning_status_emit = now_ts
+
                                         invalidate_stream_snapshot()
                                         data = {'content': build_stream_snapshot()[1]}
 
@@ -4231,6 +4333,25 @@ async def streaming_chat_response_handler(response, ctx):
                                                 reasoning_item['ended_at'] - reasoning_item['started_at']
                                             )
                                             reasoning_item['status'] = 'completed'
+                                            reasoning_text = ''.join(
+                                                part.get('text', '')
+                                                for part in reasoning_item.get('content', [])
+                                                if part.get('type') == 'output_text'
+                                            )
+                                            await event_emitter(
+                                                {
+                                                    'type': 'status',
+                                                    'data': build_hermes_status_payload(
+                                                        {
+                                                            'action': 'reasoning',
+                                                            'description': reasoning_text[-1200:],
+                                                            'text': reasoning_text[-1200:],
+                                                            'done': True,
+                                                        },
+                                                        'hermes.reasoning.completed',
+                                                    ),
+                                                }
+                                            )
 
                                             output.append(
                                                 {

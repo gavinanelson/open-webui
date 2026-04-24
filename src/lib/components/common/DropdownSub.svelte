@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { flyAndScale } from '$lib/utils/transitions';
-	import { tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 
 	/** CSS classes for the sub-content container */
 	export let contentClass =
@@ -15,6 +15,7 @@
 	let open = false;
 	let triggerEl;
 	let contentEl;
+	let positionRAF: number | null = null;
 
 	function positionContent() {
 		if (!triggerEl || !contentEl) return;
@@ -70,6 +71,15 @@
 		contentEl.style.top = `${top}px`;
 	}
 
+	function schedulePositionContent() {
+		if (!open || positionRAF !== null) return;
+
+		positionRAF = requestAnimationFrame(() => {
+			positionRAF = null;
+			positionContent();
+		});
+	}
+
 	async function handleMouseEnter() {
 		open = true;
 		await tick();
@@ -101,9 +111,15 @@
 			}
 		};
 	}
+
+	onDestroy(() => {
+		if (positionRAF !== null) {
+			cancelAnimationFrame(positionRAF);
+		}
+	});
 </script>
 
-<svelte:window on:scroll|capture={positionContent} on:resize={positionContent} />
+<svelte:window on:scroll|capture={schedulePositionContent} on:resize={schedulePositionContent} />
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <div

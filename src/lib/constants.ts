@@ -111,7 +111,7 @@ export const DEFAULT_CAPABILITIES = {
 	builtin_tools: true
 };
 
-export const PASTED_TEXT_CHARACTER_LIMIT = 1000;
+export const PASTED_TEXT_CHARACTER_LIMIT = Number.POSITIVE_INFINITY;
 
 // Source: https://kit.svelte.dev/docs/modules#$env-static-public
 // This feature, akin to $env/static/private, exclusively incorporates environment variables
