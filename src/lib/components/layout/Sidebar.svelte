@@ -1276,10 +1276,10 @@
 
 				{#if $config?.features?.enable_channels && ($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true)) && ($user?.role === 'admin' || statusBoards.length > 0)}
 					<Folder
-						id="sidebar-status-boards"
+						id="sidebar-channels"
 						bind:open={showStatusBoards}
 						className="px-2 mt-0.5"
-						name={$i18n.t('Status Boards')}
+						name={$i18n.t('Channels')}
 						chevron={false}
 						dragAndDrop={false}
 						onAdd={$user?.role === 'admin'
@@ -1292,7 +1292,7 @@
 									}, 0);
 								}
 							: null}
-						onAddLabel={$i18n.t('Create Status Board')}
+						onAddLabel={$i18n.t('Create Channel')}
 					>
 						{#each statusBoards as channel (`status-${channel?.id}`)}
 							<ChannelItem
@@ -1307,10 +1307,10 @@
 
 				{#if $config?.features?.enable_channels && ($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))}
 					<Folder
-						id="sidebar-channels"
+						id="sidebar-discussions"
 						bind:open={showChannels}
 						className="px-2 mt-0.5"
-						name={$i18n.t('Channels')}
+						name={$i18n.t('Discussions')}
 						chevron={false}
 						dragAndDrop={false}
 						onAdd={$user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true)

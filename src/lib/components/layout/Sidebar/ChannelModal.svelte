@@ -199,7 +199,7 @@
 												{:else if channelType === 'dm'}
 													{$i18n.t('Direct Message')}
 												{:else if channelType === 'status'}
-													{$i18n.t('Status Board')}
+													{$i18n.t('Channel')}
 												{:else if channelType === ''}
 													{$i18n.t('Channel')}
 												{/if}
