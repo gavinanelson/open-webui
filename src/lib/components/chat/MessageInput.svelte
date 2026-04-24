@@ -100,6 +100,8 @@
 	import Knobs from '../icons/Knobs.svelte';
 	import ValvesModal from '../workspace/common/ValvesModal.svelte';
 	import Note from '../icons/Note.svelte';
+	import Check from '../icons/Check.svelte';
+	import ChevronUpDown from '../icons/ChevronUpDown.svelte';
 	import { goto } from '$app/navigation';
 	import InputModal from '../common/InputModal.svelte';
 	import Expand from '../icons/Expand.svelte';
@@ -194,7 +196,9 @@
 
 		const current = runtimeOptions.current ?? {};
 		const currentModel = HERMES_RUNTIME_MODELS.find((option) => option.value === current.model);
-		const currentReasoning = HERMES_REASONING_LEVELS.find((option) => option.value === current.reasoning);
+		const currentReasoning = HERMES_REASONING_LEVELS.find(
+			(option) => option.value === current.reasoning
+		);
 		const currentFast = HERMES_FAST_MODES.find((option) => option.value === current.fast);
 
 		hermesRuntime = {
@@ -1812,7 +1816,10 @@
 											<Tooltip content="Hermes runtime model">
 												<button type="button" class={compactSelectorClass}>
 													<span class="line-clamp-1">{hermesRuntimeModel}</span>
-													<span class="text-[10px] text-gray-400">v</span>
+													<ChevronUpDown
+														className="size-3 shrink-0 text-gray-400"
+														strokeWidth="2"
+													/>
 												</button>
 											</Tooltip>
 
@@ -1841,8 +1848,12 @@
 																on:click={() => selectHermesModel(model)}
 															>
 																<span class="flex min-w-0 items-center gap-2">
-																	<span class="w-3 text-gray-400">
-																		{hermesRuntimeModel === model.label ? '*' : ''}
+																	<span
+																		class="flex size-3 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
+																	>
+																		{#if hermesRuntimeModel === model.label}
+																			<Check className="size-3" strokeWidth="2.4" />
+																		{/if}
 																	</span>
 																	<span class="line-clamp-1 text-sm">{model.label}</span>
 																</span>
@@ -1855,7 +1866,9 @@
 														{/each}
 													{:else}
 														<div class="px-2 py-6 text-center text-sm text-gray-500">
-															{hermesRuntimeOptionsLoaded ? 'No Hermes models exposed' : 'Loading Hermes models...'}
+															{hermesRuntimeOptionsLoaded
+																? 'No Hermes models exposed'
+																: 'Loading Hermes models...'}
 														</div>
 													{/if}
 												</div>
@@ -1872,7 +1885,10 @@
 											<Tooltip content="Reasoning and fast mode">
 												<button type="button" class={compactSelectorClass}>
 													<span class="line-clamp-1">{hermesReasoning} · {hermesFastMode}</span>
-													<span class="text-[10px] text-gray-400">v</span>
+													<ChevronUpDown
+														className="size-3 shrink-0 text-gray-400"
+														strokeWidth="2"
+													/>
 												</button>
 											</Tooltip>
 
@@ -1883,16 +1899,16 @@
 													</div>
 													<div class="space-y-0.5">
 														{#each HERMES_REASONING_LEVELS as reasoning}
-																<button
-																	type="button"
-																	class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"
-																	on:click={() => selectHermesReasoning(reasoning)}
-																>
-																	<span class="w-3 text-gray-600 dark:text-gray-300">
-																		{hermesReasoning === reasoning.label ? '✓' : ''}
-																	</span>
-																	<span>{reasoning.label}</span>
-																</button>
+															<button
+																type="button"
+																class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"
+																on:click={() => selectHermesReasoning(reasoning)}
+															>
+																<span class="w-3 text-gray-600 dark:text-gray-300">
+																	{hermesReasoning === reasoning.label ? '✓' : ''}
+																</span>
+																<span>{reasoning.label}</span>
+															</button>
 														{/each}
 													</div>
 												</div>
@@ -1929,7 +1945,10 @@
 											<Tooltip content="Hermes command groups">
 												<button type="button" class={compactSelectorClass}>
 													<span>Hermes</span>
-													<span class="text-[10px] text-gray-400">v</span>
+													<ChevronUpDown
+														className="size-3 shrink-0 text-gray-400"
+														strokeWidth="2"
+													/>
 												</button>
 											</Tooltip>
 

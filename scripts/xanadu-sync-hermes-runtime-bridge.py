@@ -9,6 +9,7 @@ honor them until that upstream source is deployed through its own release path.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -37,6 +38,41 @@ def replace_once(text: str, old: str, new: str) -> tuple[str, bool]:
     if old not in text:
         return text, False
     return text.replace(old, new, 1), True
+
+
+RUNTIME_OVERRIDE_SETUP = (
+    "        model_override = body.get(\"model\")\n"
+    "        if model_override is not None:\n"
+    "            model_override = str(model_override).strip() or None\n"
+    "        reasoning_config = None\n"
+    "        reasoning = body.get(\"reasoning\")\n"
+    "        if reasoning is not None:\n"
+    "            try:\n"
+    "                from hermes_constants import parse_reasoning_effort\n"
+    "                reasoning_config = parse_reasoning_effort(str(reasoning).strip())\n"
+    "            except Exception:\n"
+    "                reasoning_config = None\n\n"
+    "        fast_value = str(body.get(\"fast\") or \"\").strip().lower()\n"
+    "        fast_enabled = fast_value in {\"1\", \"true\", \"on\", \"fast\", \"priority\"}\n"
+    "        service_tier = \"priority\" if fast_enabled else None\n"
+    "        request_overrides = {\"speed\": \"fast\"} if fast_enabled else None\n\n"
+)
+
+
+def ensure_runtime_override_setup(text: str) -> tuple[str, bool]:
+    if "model_override = body.get(\"model\")" in text:
+        return text, False
+
+    marker = re.search(r"(?m)^([ \t]+)async def _run_and_close\(\):", text)
+    if not marker:
+        return text, False
+
+    # Repair half-patched hosts where the run call already references these
+    # variables but the local setup block was not inserted because upstream
+    # source spacing changed.
+    indent = marker.group(1)
+    setup = RUNTIME_OVERRIDE_SETUP.replace("        ", indent)
+    return text[: marker.start()] + setup + text[marker.start() :], True
 
 
 def patch_api_server(path: Path) -> bool:
@@ -72,23 +108,10 @@ def patch_api_server(path: Path) -> bool:
         "        session_id = body.get(\"session_id\") or run_id\n        ephemeral_system_prompt = instructions\n\n        async def _run_and_close():",
         "        session_id = body.get(\"session_id\") or run_id\n"
         "        ephemeral_system_prompt = instructions\n"
-        "        model_override = body.get(\"model\")\n"
-        "        if model_override is not None:\n"
-        "            model_override = str(model_override).strip() or None\n"
-        "        reasoning_config = None\n"
-        "        reasoning = body.get(\"reasoning\")\n"
-        "        if reasoning is not None:\n"
-        "            try:\n"
-        "                from hermes_constants import parse_reasoning_effort\n"
-        "                reasoning_config = parse_reasoning_effort(str(reasoning).strip())\n"
-        "            except Exception:\n"
-        "                reasoning_config = None\n\n"
-        "        fast_value = str(body.get(\"fast\") or \"\").strip().lower()\n"
-        "        fast_enabled = fast_value in {\"1\", \"true\", \"on\", \"fast\", \"priority\"}\n"
-        "        service_tier = \"priority\" if fast_enabled else None\n"
-        "        request_overrides = {\"speed\": \"fast\"} if fast_enabled else None\n\n"
+        f"{RUNTIME_OVERRIDE_SETUP}"
         "        async def _run_and_close():",
     )
+    text, _ = ensure_runtime_override_setup(text)
     text, _ = replace_once(
         text,
         "                    tool_progress_callback=event_cb,\n                )",

@@ -1,6 +1,7 @@
 import asyncio
 import os
 from typing import Any
+from urllib.parse import urlparse
 
 import aiohttp
 from fastapi import APIRouter, Depends, Request
@@ -70,8 +71,20 @@ HERMES_COMMANDS = [
 ]
 
 
-def _dashboard_base_url() -> str:
-    return os.getenv('HERMES_DASHBOARD_BASE_URL', 'http://127.0.0.1:9119').rstrip('/')
+def _dashboard_base_url(request: Request | None = None) -> str:
+    configured_url = os.getenv('HERMES_DASHBOARD_BASE_URL')
+    if configured_url:
+        return configured_url.rstrip('/')
+
+    if request:
+        urls = getattr(request.app.state.config, 'OPENAI_API_BASE_URLS', []) or []
+        for url in urls:
+            parsed_host = urlparse(url).hostname or ''
+
+            if parsed_host and parsed_host not in {'127.0.0.1', 'localhost'}:
+                return f'http://{parsed_host}:9119'
+
+    return 'http://127.0.0.1:9119'
 
 
 def _api_base_url(request: Request) -> str:
@@ -154,8 +167,6 @@ def _compat_model_options(models_payload: dict[str, Any] | list[Any]) -> list[di
         if not isinstance(model, dict) or not model.get('id'):
             continue
         model_id = str(model['id'])
-        if model_id == 'hermes-agent':
-            continue
         result.append(
             {
                 'value': model_id,
@@ -188,7 +199,7 @@ def _config_value(config: dict[str, Any], key: str) -> str:
 @router.get('/overview')
 async def get_hermes_overview(request: Request, user=Depends(get_verified_user)):
     api_base = _api_base_url(request)
-    dashboard_base = _dashboard_base_url()
+    dashboard_base = _dashboard_base_url(request)
 
     async def safe(name: str, coro):
         try:
@@ -222,7 +233,7 @@ async def get_hermes_commands(user=Depends(get_verified_user)):
 @router.get('/runtime-options')
 async def get_hermes_runtime_options(request: Request, user=Depends(get_verified_user)):
     api_base = _api_base_url(request)
-    dashboard_base = _dashboard_base_url()
+    dashboard_base = _dashboard_base_url(request)
 
     async def safe(coro, default):
         try:
