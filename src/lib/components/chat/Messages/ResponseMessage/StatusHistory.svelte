@@ -5,11 +5,11 @@
 	import StatusItem from './StatusHistory/StatusItem.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 	import Camera from '$lib/components/icons/Camera.svelte';
-	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 	import Wrench from '$lib/components/icons/Wrench.svelte';
 	import Code from '$lib/components/icons/Code.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
+	import Brain from '$lib/components/icons/Brain.svelte';
 
 	export let statusHistory: any[] = [];
 	export let expand = false;
@@ -124,17 +124,17 @@
 	const kindColor = (kind: EntryKind) => {
 		switch (kind) {
 			case 'reasoning':
-				return 'text-amber-500 dark:text-amber-400';
+				return 'text-rose-500 dark:text-rose-300';
 			case 'browser':
-				return 'text-sky-500 dark:text-sky-400';
+				return 'text-cyan-500 dark:text-cyan-300';
 			case 'search':
-				return 'text-indigo-500 dark:text-indigo-400';
+				return 'text-blue-500 dark:text-blue-300';
 			case 'snapshot':
-				return 'text-violet-500 dark:text-violet-400';
+				return 'text-fuchsia-500 dark:text-fuchsia-300';
 			case 'code':
 				return 'text-emerald-500 dark:text-emerald-400';
 			case 'tool':
-				return 'text-gray-500 dark:text-gray-400';
+				return 'text-slate-500 dark:text-slate-300';
 			default:
 				return 'text-gray-400 dark:text-gray-500';
 		}
@@ -207,7 +207,8 @@
 		const compactDetail = compactValue(detail);
 		if (compactDetail) return compactDetail;
 
-		const value = entry?.description ?? entry?.text ?? entry?.summary ?? entry?.preview ?? entry?.message;
+		const value =
+			entry?.description ?? entry?.text ?? entry?.summary ?? entry?.preview ?? entry?.message;
 		if (typeof value === 'string' && !isNoiseBody(value, entry)) return compactValue(value);
 		return '';
 	};
@@ -288,7 +289,9 @@
 				</div>
 
 				<!-- mode hint + chevron -->
-				<div class="flex shrink-0 items-center gap-1 text-[10.5px] text-gray-400 dark:text-gray-500">
+				<div
+					class="flex shrink-0 items-center gap-1 text-[10.5px] text-gray-400 dark:text-gray-500"
+				>
 					<span class="font-medium uppercase tracking-wide">{VIEW_LABELS[viewMode]}</span>
 					<div class="transition-transform duration-200 {expanded ? 'rotate-180' : ''}">
 						<ChevronDown className="size-3" strokeWidth="2.5" />
@@ -298,11 +301,9 @@
 
 			<!-- Body: timeline (no rail, just rows) -->
 			{#if expanded}
-				<div
-					class="border-t border-gray-200/70 dark:border-white/[0.05]"
-				>
+				<div class="border-t border-gray-200/70 dark:border-white/[0.05]">
 					<ul class="px-2.5 py-1.5">
-						{#each history as entry, idx}
+						{#each history as entry}
 							{@const kind = entryKind(entry)}
 							{@const title = entryTitle(entry)}
 							{@const body = entryBody(entry)}
@@ -318,7 +319,7 @@
 									)} {!entryDone ? 'animate-pulse' : ''}"
 								>
 									{#if isReasoning}
-										<Sparkles className="size-3.5" strokeWidth="2" />
+										<Brain className="size-3.5" strokeWidth="2" />
 									{:else if kind === 'browser'}
 										<GlobeAlt className="size-3.5" strokeWidth="2" />
 									{:else if kind === 'search'}
@@ -363,7 +364,7 @@
 									{#if viewMode === 'trace' && body}
 										{#if isReasoning}
 											<div
-												class="mt-0.5 border-l-2 border-amber-300 pl-2.5 text-[12.5px] italic leading-[18px] text-gray-600 dark:border-amber-400/60 dark:text-gray-300"
+												class="mt-0.5 border-l-2 border-rose-300 pl-2.5 text-[12.5px] italic leading-[18px] text-gray-600 dark:border-rose-300/60 dark:text-gray-300"
 											>
 												<div class="whitespace-pre-wrap break-words">{body}</div>
 											</div>
