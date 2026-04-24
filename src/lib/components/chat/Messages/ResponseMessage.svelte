@@ -617,7 +617,7 @@
 				<div class="chat-{message.role} w-full min-w-full markdown-prose">
 					<div>
 						{#if model?.info?.meta?.capabilities?.status_updates ?? true}
-							<StatusHistory statusHistory={statusEntries} {visibilityMode} />
+							<StatusHistory statusHistory={statusEntries} {visibilityMode} messageDone={message.done} />
 						{/if}
 
 						{#if message?.files && message.files?.filter((f) => f.type === 'image').length > 0}
