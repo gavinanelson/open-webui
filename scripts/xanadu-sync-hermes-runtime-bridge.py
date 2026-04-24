@@ -208,18 +208,24 @@ def patch_web_server(path: Path) -> bool:
 
 
 def restart_hermes_if_possible() -> None:
-    labels = run(["/bin/zsh", "-lc", "launchctl list | awk '/hermes/i {print $3}'"]).stdout.splitlines()
+    labels = run(["/bin/zsh", "-lc", "launchctl list | awk 'tolower($3) ~ /hermes/ {print $3}'"]).stdout.splitlines()
     labels = [label.strip() for label in labels if label.strip() and label.strip() != "-"]
-    if labels:
-        uid = os.getuid()
-        for label in labels:
-            result = run(["launchctl", "kickstart", "-k", f"gui/{uid}/{label}"])
-            print(f"restart launchd {label}: exit={result.returncode}")
-            if result.stdout.strip():
-                print(result.stdout.strip())
+    labels = [
+        label
+        for label in labels
+        if "hermes" in label.lower() and "gateway" not in label.lower()
+    ]
+
+    if not labels:
+        print("No non-gateway launchd Hermes service found; source patched, restart not attempted.")
         return
 
-    print("No launchd Hermes service found; source patched, restart not attempted.")
+    uid = os.getuid()
+    for label in labels:
+        result = run(["/bin/launchctl", "kickstart", "-k", f"gui/{uid}/{label}"])
+        print(f"restart launchd {label}: exit={result.returncode}")
+        if result.stdout.strip():
+            print(result.stdout.strip())
 
 
 def main() -> int:
