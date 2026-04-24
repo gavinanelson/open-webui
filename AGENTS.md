@@ -26,6 +26,8 @@ This repository has two Xanadu deployments. Do not confuse them.
 - Deployment triggers are branch-locked: production redeploys only when `main` is pushed; testing redeploys only when `testing` is pushed. Do not add broad push triggers, manual deploy triggers, or shared deploy concurrency groups that could make one branch interrupt the other.
 - GitHub environment branch policies mirror this: `xanadu-production` allows only `main`, and `xanadu-testing` allows only `testing`.
 - Testing deploys must not do heavy Docker builds on `xanadu-host`. The test workflow builds/pushes the image off-host to GHCR first, then the self-hosted job only pulls and recreates the isolated test containers. Do not move the test image build back onto the Xanadu self-hosted runner; local Docker builds have caused production `chat.yxanadu.com` backend restarts/Cloudflare 502s.
+- The test deploy script refuses local builds unless `ALLOW_LOCAL_TEST_BUILD=1` is explicitly set for an emergency manual recovery. Normal test deployments must provide `OPENWEBUI_TEST_IMAGE` from GHCR.
+- The testing workflow captures a production canary before/after each test deploy and fails if `hermes-open-webui` restarts or `https://chat.yxanadu.com/` stops returning `200`.
 
 ## Recommended workflow
 

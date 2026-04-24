@@ -9,6 +9,8 @@ Gavin's Open WebUI fork has two separate deployments.
 - Workflow: `.github/workflows/deploy-xanadu-test.yml`
 - Trigger: push to `testing` only; no manual/broad push redeploy trigger
 - Build isolation: the workflow builds the test image off-host on GitHub-hosted ARM and pushes `ghcr.io/gavinanelson/open-webui:xanadu-test-<sha>`; the Xanadu self-hosted deploy job only pulls that image and restarts the test stack
+- Runtime guardrails: the test containers are resource-limited in compose, and the test deploy script refuses local builds unless `ALLOW_LOCAL_TEST_BUILD=1` is explicitly set for emergency manual recovery
+- Production canary: the testing workflow records `hermes-open-webui` restart count before the test deploy and fails if production restarts or `https://chat.yxanadu.com/` is not `200` afterward
 - GitHub environment: `xanadu-testing`, custom deployment branch policy `testing` only
 - Script: `scripts/deploy-xanadu-openwebui-test.sh`
 - Backend container: `hermes-open-webui-test`
