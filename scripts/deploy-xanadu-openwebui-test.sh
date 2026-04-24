@@ -178,7 +178,7 @@ docker compose -p open-webui-test up -d --no-deps open-webui-test-pwa-proxy
 # The test stack uses a fresh Open WebUI DB volume. Seed only the prod admin
 # login row (no chats/files/history) so Gavin can use the same login and the
 # Hermes catalog sync has an admin user to own model/tool/skill rows.
-if docker exec hermes-open-webui-test python3 - <<'PY' >/dev/null 2>&1
+if docker exec -i hermes-open-webui-test python3 - <<'PY' >/dev/null 2>&1
 import sqlite3
 conn=sqlite3.connect('/app/backend/data/webui.db')
 cur=conn.cursor()
@@ -223,7 +223,7 @@ PY
 fi
 
 if [[ "${OPENWEBUI_TEST_SEED_STATUS_BOARDS:-1}" == "1" ]]; then
-  docker exec hermes-open-webui-test python3 - <<'PY'
+  docker exec -i hermes-open-webui-test python3 - <<'PY'
 import json
 import secrets
 import sqlite3
