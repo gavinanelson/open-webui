@@ -2933,7 +2933,11 @@ RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE = (
     os.environ.get('RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE', 'True').lower() == 'true'
 )
 
-RAG_EMBEDDING_MODEL_EAGER_LOAD = os.environ.get('RAG_EMBEDDING_MODEL_EAGER_LOAD', 'False').lower() == 'true'
+RAG_EMBEDDING_MODEL_EAGER_LOAD = PersistentConfig(
+    'RAG_EMBEDDING_MODEL_EAGER_LOAD',
+    'rag.embedding_model_eager_load',
+    os.environ.get('RAG_EMBEDDING_MODEL_EAGER_LOAD', 'False').lower() == 'true',
+)
 
 RAG_EMBEDDING_BATCH_SIZE = PersistentConfig(
     'RAG_EMBEDDING_BATCH_SIZE',
