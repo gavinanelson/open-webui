@@ -82,7 +82,9 @@ def _api_base_url(request: Request) -> str:
     return os.getenv('HERMES_API_BASE_URL', 'http://127.0.0.1:8642').rstrip('/').removesuffix('/v1')
 
 
-async def _fetch_json(url: str, headers: dict[str, str] | None = None, timeout: float = 4.0) -> dict[str, Any] | list[Any]:
+async def _fetch_json(
+    url: str, headers: dict[str, str] | None = None, timeout: float = 4.0
+) -> dict[str, Any] | list[Any]:
     session = await get_session()
     async with session.get(
         url,
@@ -240,12 +242,13 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
 
     model_options = _hermes_catalog_model_options(catalog) or _compat_model_options(models_payload)
 
-    configured_model = (
-        (model_info.get('model') if isinstance(model_info, dict) else None)
-        or (_config_value(config, 'model') if isinstance(config, dict) else '')
+    configured_model = (model_info.get('model') if isinstance(model_info, dict) else None) or (
+        _config_value(config, 'model') if isinstance(config, dict) else ''
     )
     if configured_model:
-        model_options.insert(0, {'value': configured_model, 'label': configured_model, 'description': 'Configured Hermes model'})
+        model_options.insert(
+            0, {'value': configured_model, 'label': configured_model, 'description': 'Configured Hermes model'}
+        )
 
     reasoning_options = _schema_options(schema, 'agent.reasoning_effort')
     fast_options = _schema_options(schema, 'agent.service_tier')

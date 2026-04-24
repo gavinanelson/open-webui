@@ -155,11 +155,7 @@ def build_hermes_status_payload(data: dict[str, Any], event_type: str):
     if status in {'completed', 'complete', 'done'} or event_type.endswith('.completed'):
         done = True
 
-    payload = {
-        key: _compact_event_value(value)
-        for key, value in data.items()
-        if not key.startswith('_')
-    }
+    payload = {key: _compact_event_value(value) for key, value in data.items() if not key.startswith('_')}
 
     description = (
         data.get('label')
@@ -4214,9 +4210,7 @@ async def streaming_chat_response_handler(response, ctx):
                                                 delta_count=delta_count,
                                                 last_delta_data=last_delta_data,
                                                 save_pending=(
-                                                    save_pending_realtime_chat
-                                                    if ENABLE_REALTIME_CHAT_SAVE
-                                                    else None
+                                                    save_pending_realtime_chat if ENABLE_REALTIME_CHAT_SAVE else None
                                                 ),
                                             )
 

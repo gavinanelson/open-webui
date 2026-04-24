@@ -15,10 +15,13 @@ class TestSessionInfoHeaders:
         assert should_forward_session_info_headers('https://openrouter.ai/api/v1') is False
 
     def test_explicit_config_can_force_forwarding(self):
-        assert should_forward_session_info_headers(
-            'https://api.openai.com/v1',
-            config={'forward_session_info': True},
-        ) is True
+        assert (
+            should_forward_session_info_headers(
+                'https://api.openai.com/v1',
+                config={'forward_session_info': True},
+            )
+            is True
+        )
 
     def test_include_session_info_headers_adds_chat_and_message_ids(self):
         headers = include_session_info_headers(

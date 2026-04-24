@@ -1585,7 +1585,9 @@ async def _resolve_hermes_messages(form_data: dict, metadata: dict) -> list[dict
     messages = list(form_data.get('messages') or [])
     user_message = metadata.get('user_message') or form_data.get('user_message') or form_data.get('parent_message')
     chat_id = metadata.get('chat_id') or form_data.get('chat_id')
-    user_message_id = metadata.get('user_message_id') or (user_message.get('id') if isinstance(user_message, dict) else None)
+    user_message_id = metadata.get('user_message_id') or (
+        user_message.get('id') if isinstance(user_message, dict) else None
+    )
 
     if chat_id and user_message_id and not str(chat_id).startswith('local:'):
         db_messages = await load_messages_from_db(chat_id, user_message_id)
