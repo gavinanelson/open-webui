@@ -57,7 +57,9 @@
 	</div>
 
 	{#if error}
-		<div class="border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+		<div
+			class="border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200"
+		>
 			{error}
 		</div>
 	{/if}
@@ -96,7 +98,9 @@
 					{modelInfo?.model ?? overview?.models?.data?.[0]?.id ?? 'Unknown'}
 				</div>
 				<div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">
-					{modelInfo?.provider ? `${modelInfo.provider} · ` : ''}{modelInfo?.effective_context_length
+					{modelInfo?.provider
+						? `${modelInfo.provider} · `
+						: ''}{modelInfo?.effective_context_length
 						? `${modelInfo.effective_context_length} context`
 						: 'Hermes model endpoint'}
 				</div>
@@ -201,7 +205,9 @@
 											{command.label}
 										</div>
 									</div>
-									<div class="shrink-0 rounded border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-400">
+									<div
+										class="shrink-0 rounded border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-500 dark:border-gray-800 dark:text-gray-400"
+									>
 										{command.ui}
 									</div>
 								</div>

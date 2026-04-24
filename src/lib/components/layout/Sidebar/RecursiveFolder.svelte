@@ -681,8 +681,7 @@
 
 				{#if folderStatus && !open}
 					<div
-						class="mr-7 size-2 shrink-0 rounded-full {folderStatus ===
-						'complete'
+						class="mr-7 size-2 shrink-0 rounded-full {folderStatus === 'complete'
 							? 'bg-emerald-500/80'
 							: 'bg-sky-500/80 animate-pulse'}"
 						aria-label={folderStatus === 'complete' ? $i18n.t('Complete') : $i18n.t('Working')}

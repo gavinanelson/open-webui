@@ -194,7 +194,9 @@
 
 		const current = runtimeOptions.current ?? {};
 		const currentModel = HERMES_RUNTIME_MODELS.find((option) => option.value === current.model);
-		const currentReasoning = HERMES_REASONING_LEVELS.find((option) => option.value === current.reasoning);
+		const currentReasoning = HERMES_REASONING_LEVELS.find(
+			(option) => option.value === current.reasoning
+		);
 		const currentFast = HERMES_FAST_MODES.find((option) => option.value === current.fast);
 
 		hermesRuntime = {
@@ -1855,7 +1857,9 @@
 														{/each}
 													{:else}
 														<div class="px-2 py-6 text-center text-sm text-gray-500">
-															{hermesRuntimeOptionsLoaded ? 'No Hermes models exposed' : 'Loading Hermes models...'}
+															{hermesRuntimeOptionsLoaded
+																? 'No Hermes models exposed'
+																: 'Loading Hermes models...'}
 														</div>
 													{/if}
 												</div>
@@ -1883,16 +1887,16 @@
 													</div>
 													<div class="space-y-0.5">
 														{#each HERMES_REASONING_LEVELS as reasoning}
-																<button
-																	type="button"
-																	class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"
-																	on:click={() => selectHermesReasoning(reasoning)}
-																>
-																	<span class="w-3 text-gray-600 dark:text-gray-300">
-																		{hermesReasoning === reasoning.label ? '✓' : ''}
-																	</span>
-																	<span>{reasoning.label}</span>
-																</button>
+															<button
+																type="button"
+																class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"
+																on:click={() => selectHermesReasoning(reasoning)}
+															>
+																<span class="w-3 text-gray-600 dark:text-gray-300">
+																	{hermesReasoning === reasoning.label ? '✓' : ''}
+																</span>
+																<span>{reasoning.label}</span>
+															</button>
 														{/each}
 													</div>
 												</div>
