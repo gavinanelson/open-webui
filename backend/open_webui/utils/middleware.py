@@ -161,7 +161,14 @@ def build_hermes_status_payload(data: dict[str, Any], event_type: str):
         if not key.startswith('_')
     }
 
-    description = data.get('label') or data.get('description') or data.get('message') or data.get('tool')
+    description = (
+        data.get('label')
+        or data.get('description')
+        or data.get('message')
+        or data.get('text')
+        or data.get('preview')
+        or data.get('tool')
+    )
     description = description or 'Hermes is working'
 
     emoji = data.get('emoji') or ''
@@ -3886,6 +3893,7 @@ async def streaming_chat_response_handler(response, ctx):
                     snapshot_dirty = False
                     cached_pending_tool_call_key = None
                     cached_pending_tool_call_content = None
+                    last_reasoning_status_emit = 0
 
                     async def save_pending_realtime_chat():
                         nonlocal pending_realtime_save
@@ -4260,6 +4268,7 @@ async def streaming_chat_response_handler(response, ctx):
                                         or delta.get('thinking')
                                     )
                                     if reasoning_content:
+                                        now_ts = time.time()
                                         if not output or output[-1].get('type') != 'reasoning':
                                             reasoning_item = {
                                                 'type': 'reasoning',
@@ -4288,6 +4297,27 @@ async def streaming_chat_response_handler(response, ctx):
                                                 }
                                             ]
 
+                                        if now_ts - last_reasoning_status_emit >= 1:
+                                            reasoning_text = ''.join(
+                                                part.get('text', '')
+                                                for part in reasoning_item.get('content', [])
+                                                if part.get('type') == 'output_text'
+                                            )
+                                            await event_emitter(
+                                                {
+                                                    'type': 'status',
+                                                    'data': build_hermes_status_payload(
+                                                        {
+                                                            'action': 'reasoning',
+                                                            'description': reasoning_text[-1200:],
+                                                            'text': reasoning_text[-1200:],
+                                                        },
+                                                        'hermes.reasoning.delta',
+                                                    ),
+                                                }
+                                            )
+                                            last_reasoning_status_emit = now_ts
+
                                         invalidate_stream_snapshot()
                                         data = {'content': build_stream_snapshot()[1]}
 
@@ -4303,6 +4333,25 @@ async def streaming_chat_response_handler(response, ctx):
                                                 reasoning_item['ended_at'] - reasoning_item['started_at']
                                             )
                                             reasoning_item['status'] = 'completed'
+                                            reasoning_text = ''.join(
+                                                part.get('text', '')
+                                                for part in reasoning_item.get('content', [])
+                                                if part.get('type') == 'output_text'
+                                            )
+                                            await event_emitter(
+                                                {
+                                                    'type': 'status',
+                                                    'data': build_hermes_status_payload(
+                                                        {
+                                                            'action': 'reasoning',
+                                                            'description': reasoning_text[-1200:],
+                                                            'text': reasoning_text[-1200:],
+                                                            'done': True,
+                                                        },
+                                                        'hermes.reasoning.completed',
+                                                    ),
+                                                }
+                                            )
 
                                             output.append(
                                                 {

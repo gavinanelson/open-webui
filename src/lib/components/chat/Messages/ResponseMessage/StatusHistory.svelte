@@ -3,7 +3,6 @@
 	const i18n = getContext('i18n');
 
 	import StatusItem from './StatusHistory/StatusItem.svelte';
-	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import equal from 'fast-deep-equal';
 
 	export let statusHistory = [];
@@ -25,6 +24,10 @@
 	let status = null;
 
 	const clampMode = (mode) => (VIEW_MODES.includes(mode) ? mode : 'compact');
+	const nextViewMode = () => {
+		const currentIndex = VIEW_MODES.indexOf(viewMode);
+		return VIEW_MODES[(currentIndex + 1) % VIEW_MODES.length];
+	};
 
 	const loadViewMode = () => {
 		try {
@@ -58,28 +61,32 @@
 
 	const isDone = (entry) => entry?.done === true || entry?.status === 'completed';
 	const isActive = (entry) => entry && !isDone(entry);
-	const statusLabel = (entry) => {
+	const entryKind = (entry) => {
 		const event = entry?.event ?? '';
 		if (event.includes('reasoning')) return 'Reasoning';
 		if (event.includes('tool')) return 'Tool';
-		if (entry?.source) return entry.source;
+		if (entry?.action) return entry.action;
 		return 'Hermes';
 	};
-	const detailEntries = (entry) =>
-		Object.entries(entry ?? {}).filter(
-			([key, value]) =>
-				!['description', 'done', 'hidden'].includes(key) &&
-				value !== undefined &&
-				value !== null &&
-				value !== ''
-		);
-	const formatDetailValue = (value) => {
+	const entryText = (entry) => {
+		const value =
+			entry?.text ??
+			entry?.reasoning ??
+			entry?.summary ??
+			entry?.preview ??
+			entry?.label ??
+			entry?.description ??
+			entry?.tool ??
+			entry?.action;
 		if (typeof value === 'string') return value;
 		try {
-			return JSON.stringify(value, null, 2);
+			return JSON.stringify(value);
 		} catch {
-			return String(value);
+			return String(value ?? '');
 		}
+	};
+	const cycleViewMode = () => {
+		setViewMode(nextViewMode());
 	};
 
 	$: if (history && history.length > 0) {
@@ -96,6 +103,9 @@
 	$: stageCount = new Set(history.map((entry) => entry?.action).filter(Boolean)).size;
 	$: panelHistory = viewMode === 'detailed' ? history : history.slice(-5);
 	$: selectedViewLabel = VIEW_LABELS[viewMode] ?? VIEW_LABELS.compact;
+	$: hasReasoning = history.some(
+		(entry) => (entry?.event ?? '').includes('reasoning') || entry?.text
+	);
 	$: if (expand && viewMode === 'compact') {
 		setViewMode('medium');
 	}
@@ -131,59 +141,23 @@
 			</div>
 
 			<div class="min-w-0">
-				<div class="flex min-w-0 flex-col gap-1">
-					<button
-						class="min-w-0 flex-1 text-left"
-						aria-label={$i18n.t('Toggle status history')}
-						aria-expanded={showHistory}
-						on:click={() => {
-							if (viewMode === 'compact') {
-								setViewMode('medium');
-							} else {
-								showHistory = !showHistory;
-							}
-						}}
-					>
-						<StatusItem {status} compact={viewMode === 'compact'} />
-					</button>
-
-					<div
-						class="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-gray-500 dark:text-gray-500"
-					>
-						<span class="whitespace-nowrap">{active ? 'Working' : 'Done'}</span>
-						<span class="text-gray-300 dark:text-gray-700">/</span>
-						<span class="whitespace-nowrap">{elapsed}</span>
-						<span class="text-gray-300 dark:text-gray-700">/</span>
-						<span class="line-clamp-1">{statusLabel(status)}</span>
-						<Dropdown
-							side="top"
-							align="start"
-							contentClass="rounded-lg border border-gray-100 bg-white p-1 shadow-lg dark:border-gray-800 dark:bg-gray-900"
+				<button
+					class="w-full rounded-lg border border-gray-100 bg-gray-50/70 px-2.5 py-2 text-left transition hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900/40 dark:hover:bg-gray-850"
+					aria-label={$i18n.t('Cycle status detail level')}
+					aria-pressed={viewMode !== 'compact'}
+					on:click={cycleViewMode}
+				>
+					<div class="flex min-w-0 items-start justify-between gap-3">
+						<div class="min-w-0 flex-1">
+							<StatusItem {status} compact={true} />
+						</div>
+						<div
+							class="shrink-0 rounded-md bg-white px-1.5 py-0.5 text-[11px] font-medium text-gray-600 shadow-xs dark:bg-gray-800 dark:text-gray-300"
 						>
-							<button
-								type="button"
-								class="rounded px-1.5 py-0.5 font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-850"
-							>
-								{selectedViewLabel} v
-							</button>
-
-							<div slot="content" class="flex flex-col">
-								{#each VIEW_MODES as mode}
-									<button
-										type="button"
-										class="rounded px-2 py-1 text-left text-xs transition {viewMode === mode
-											? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
-											: 'text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-850'}"
-										on:click={() => setViewMode(mode)}
-										aria-pressed={viewMode === mode}
-									>
-										{VIEW_LABELS[mode]}
-									</button>
-								{/each}
-							</div>
-						</Dropdown>
+							{selectedViewLabel}
+						</div>
 					</div>
-				</div>
+				</button>
 
 				{#if viewMode !== 'compact'}
 					<div class="mt-2 pl-3">
@@ -215,26 +189,32 @@
 										</div>
 
 										<div class="min-w-0">
-											<StatusItem status={entry} done={!isActive(entry)} compact={false} />
-
 											{#if viewMode === 'detailed'}
-												<div
-													class="mt-1 grid gap-1 rounded-md bg-gray-50 p-2 text-[11px] dark:bg-gray-900/60"
-												>
-													{#each detailEntries(entry) as [key, value]}
-														<div class="grid grid-cols-[96px_minmax(0,1fr)] gap-2">
-															<div class="font-medium text-gray-500 dark:text-gray-500">{key}</div>
-															<pre
-																class="whitespace-pre-wrap break-words font-mono text-[11px] leading-4 text-gray-700 dark:text-gray-300">{formatDetailValue(
-																	value
-																)}</pre>
-														</div>
-													{/each}
+												<div class="rounded-md bg-gray-50 p-2 dark:bg-gray-900/60">
+													<div
+														class="mb-1 text-[11px] font-medium text-gray-500 dark:text-gray-500"
+													>
+														{entryKind(entry)}
+													</div>
+													<div
+														class="whitespace-pre-wrap break-words text-xs leading-5 text-gray-700 dark:text-gray-300"
+													>
+														{entryText(entry)}
+													</div>
 												</div>
+											{:else}
+												<StatusItem status={entry} done={!isActive(entry)} compact={false} />
 											{/if}
 										</div>
 									</div>
 								{/each}
+								{#if viewMode === 'detailed' && !hasReasoning}
+									<div
+										class="rounded-md border border-dashed border-gray-200 px-2.5 py-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-500"
+									>
+										Reasoning text is not present on this Hermes chat-completions stream yet.
+									</div>
+								{/if}
 								{#if !active}
 									<div class="grid grid-cols-[12px_minmax(0,1fr)] gap-2">
 										<div class="pt-1.5">
@@ -249,6 +229,10 @@
 						{/if}
 					</div>
 				{/if}
+
+				<div class="mt-1.5 text-[11px] text-gray-500 dark:text-gray-500">
+					{active ? 'Working' : 'Done'} for {elapsed}
+				</div>
 			</div>
 		</div>
 	</div>
