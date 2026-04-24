@@ -51,7 +51,7 @@ jobs:
           build-args: |
             BUILD_HASH=${{ github.sha }}
             USE_SLIM=true
-            NODE_MAX_OLD_SPACE_SIZE=2048
+            NODE_MAX_OLD_SPACE_SIZE=4096
 
   deploy-test:
     name: Deploy Open WebUI test stack to xanadu-host
