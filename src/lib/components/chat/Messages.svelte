@@ -83,6 +83,7 @@
 	let bottomSpacerHeight = 0;
 	let pendingCull = null;
 	let pendingVirtualizationRefresh = null;
+	let touchStartY = 0;
 	let virtualizationLayout = {
 		messageIds: [],
 		prefixSums: [0],
@@ -90,6 +91,8 @@
 	};
 
 	const heightOf = (id) => messageHeights.get(id) ?? DEFAULT_HEIGHT;
+	const isNearBottom = (container: HTMLElement, threshold = 50) =>
+		container.scrollHeight - container.scrollTop <= container.clientHeight + threshold;
 
 	const refreshVirtualization = () => {
 		virtualizationLayout = buildVirtualizationLayout({
@@ -133,11 +136,46 @@
 	};
 
 	const handleContainerScroll = () => {
+		const container = document.getElementById('messages-container');
+		if (container) {
+			autoScroll = isNearBottom(container);
+		}
+
 		if (!pendingCull) {
 			pendingCull = requestAnimationFrame(() => {
 				pendingCull = null;
 				updateVisibleRange();
 			});
+		}
+	};
+
+	const handleUserScrollIntent = (event: WheelEvent | TouchEvent) => {
+		const container = document.getElementById('messages-container');
+		if (!container) return;
+
+		if (event instanceof WheelEvent) {
+			if (event.deltaY < 0) {
+				autoScroll = false;
+				return;
+			}
+
+			autoScroll = isNearBottom(container);
+			return;
+		}
+
+		if (event.type === 'touchstart') {
+			touchStartY = event.touches?.[0]?.clientY ?? 0;
+			return;
+		}
+
+		if (event.type === 'touchmove') {
+			const currentY = event.touches?.[0]?.clientY ?? touchStartY;
+			if (currentY > touchStartY) {
+				autoScroll = false;
+				return;
+			}
+
+			autoScroll = isNearBottom(container);
 		}
 	};
 
@@ -149,6 +187,9 @@
 		if (!container) return;
 
 		container.addEventListener('scroll', handleContainerScroll, { passive: true });
+		container.addEventListener('wheel', handleUserScrollIntent, { passive: true });
+		container.addEventListener('touchstart', handleUserScrollIntent, { passive: true });
+		container.addEventListener('touchmove', handleUserScrollIntent, { passive: true });
 		scrollListenerAttached = true;
 	};
 
@@ -161,6 +202,9 @@
 		const container = document.getElementById('messages-container');
 		if (container && scrollListenerAttached) {
 			container.removeEventListener('scroll', handleContainerScroll);
+			container.removeEventListener('wheel', handleUserScrollIntent);
+			container.removeEventListener('touchstart', handleUserScrollIntent);
+			container.removeEventListener('touchmove', handleUserScrollIntent);
 		}
 		cancelAnimationFrame(pendingCull);
 		cancelAnimationFrame(pendingRebuild);

@@ -568,9 +568,9 @@
 		<div class="w-full group">
 			<div
 				id="folder-{folderId}-button"
-				class="relative w-full min-h-9 py-1.5 px-2 rounded-xl flex items-center gap-2 border border-gray-200/80 bg-gray-100/55 text-gray-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] hover:bg-gray-100 dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-100 dark:shadow-none dark:hover:bg-gray-900 transition {$selectedFolder?.id ===
+				class="relative w-full min-h-9 py-1.5 px-2 rounded-xl flex items-center gap-2 border border-transparent text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-950 transition {$selectedFolder?.id ===
 				folderId
-					? 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-100 selected'
+					? 'bg-gray-100 text-gray-950 dark:bg-gray-900 dark:text-gray-100 selected'
 					: ''}"
 				on:dblclick={(e) => {
 					if (clickTimer) {
@@ -681,10 +681,10 @@
 
 				{#if folderStatus && !open}
 					<div
-						class="mr-7 size-2.5 shrink-0 rounded-full ring-2 ring-white dark:ring-gray-950 {folderStatus ===
+						class="mr-7 size-2 shrink-0 rounded-full {folderStatus ===
 						'complete'
-							? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]'
-							: 'bg-sky-500 shadow-[0_0_0_3px_rgba(14,165,233,0.16)] animate-pulse'}"
+							? 'bg-emerald-500/80'
+							: 'bg-sky-500/80 animate-pulse'}"
 						aria-label={folderStatus === 'complete' ? $i18n.t('Complete') : $i18n.t('Working')}
 					/>
 				{/if}
@@ -718,7 +718,7 @@
 		<div slot="content" class="w-full">
 			{#if (folders[folderId]?.childrenIds ?? []).length > 0 || (chats ?? []).length > 0}
 				<div
-					class="ml-5 pl-2 mt-1 flex flex-col overflow-y-auto scrollbar-hidden border-s-2 border-gray-200 dark:border-gray-800"
+					class="ml-5 pl-2 mt-1 flex flex-col overflow-y-auto scrollbar-hidden border-s border-gray-100 dark:border-gray-850"
 				>
 					{#if folders[folderId]?.childrenIds}
 						{@const children = folders[folderId]?.childrenIds

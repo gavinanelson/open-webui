@@ -488,9 +488,9 @@
 			{#if status}
 				<div class="shrink-0 self-center pr-2.5 flex">
 					<div
-						class="size-2.5 rounded-full ring-2 ring-white dark:ring-gray-950 {status === 'complete'
-							? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]'
-							: 'bg-sky-500 shadow-[0_0_0_3px_rgba(14,165,233,0.16)] animate-pulse'}"
+						class="size-2 rounded-full {status === 'complete'
+							? 'bg-emerald-500/80'
+							: 'bg-sky-500/80 animate-pulse'}"
 						aria-label={status === 'complete' ? $i18n.t('Complete') : $i18n.t('Working')}
 					/>
 				</div>

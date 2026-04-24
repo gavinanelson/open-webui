@@ -52,6 +52,56 @@
 		return m > 0 ? `${m}m ${s}s` : `${s}s`;
 	};
 
+	const formatClock = (entry: any) => {
+		const timestamp = timestampOf(entry);
+		if (!timestamp) return '';
+
+		return new Date(timestamp).toLocaleTimeString([], {
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit'
+		});
+	};
+
+	const parseMaybeJSON = (value: any): any => {
+		if (typeof value !== 'string') return value;
+
+		try {
+			return parseMaybeJSON(JSON.parse(value));
+		} catch {
+			return value;
+		}
+	};
+
+	const compactValue = (value: any, limit = 220): string => {
+		const parsed = parseMaybeJSON(value);
+		let text = '';
+
+		if (parsed === null || parsed === undefined || parsed === '') return '';
+		if (typeof parsed === 'string') {
+			text = parsed;
+		} else if (Array.isArray(parsed)) {
+			text = parsed
+				.map((item) => {
+					if (typeof item === 'string') return item;
+					return item?.path ?? item?.name ?? item?.url ?? item?.title ?? JSON.stringify(item);
+				})
+				.filter(Boolean)
+				.join(', ');
+		} else if (typeof parsed === 'object') {
+			const keys = ['query', 'q', 'search', 'path', 'file', 'filename', 'url', 'target', 'input'];
+			const parts = keys
+				.filter((key) => parsed[key] !== undefined && parsed[key] !== null && parsed[key] !== '')
+				.map((key) => `${key}: ${compactValue(parsed[key], 80)}`);
+			text = parts.length > 0 ? parts.join(' · ') : JSON.stringify(parsed);
+		} else {
+			text = String(parsed);
+		}
+
+		text = text.replace(/\s+/g, ' ').trim();
+		return text.length > limit ? `${text.slice(0, limit - 1)}...` : text;
+	};
+
 	const isDone = (entry: any) =>
 		entry?.done === true ||
 		['completed', 'complete', 'done'].includes(String(entry?.status ?? '').toLowerCase());
@@ -113,10 +163,7 @@
 			return host ? `Visited ${host}` : 'Browsed';
 		}
 		if (kind === 'snapshot') return 'Captured page';
-		if (kind === 'search') {
-			const q = entry?.query ?? entry?.search ?? null;
-			return q ? `Searched "${q}"` : 'Searched';
-		}
+		if (kind === 'search') return 'Searched';
 		if (kind === 'code') return 'Ran code';
 		if (entry?.tool) return humanize(String(entry.tool));
 		if (entry?.action) return humanize(String(entry.action));
@@ -143,10 +190,25 @@
 				entry?.reasoning ?? entry?.text ?? entry?.summary ?? entry?.preview ?? entry?.description;
 			return typeof value === 'string' ? value : '';
 		}
-		const url = entry?.url ?? entry?.target;
-		if (typeof url === 'string' && url.startsWith('http')) return url;
-		const value = entry?.description ?? entry?.text ?? entry?.summary ?? entry?.preview;
-		if (typeof value === 'string' && !isNoiseBody(value, entry)) return value;
+		const detail =
+			entry?.query ??
+			entry?.search ??
+			entry?.q ??
+			entry?.path ??
+			entry?.file ??
+			entry?.filename ??
+			entry?.url ??
+			entry?.target ??
+			entry?.arguments ??
+			entry?.args ??
+			entry?.params ??
+			entry?.input ??
+			entry?.files;
+		const compactDetail = compactValue(detail);
+		if (compactDetail) return compactDetail;
+
+		const value = entry?.description ?? entry?.text ?? entry?.summary ?? entry?.preview ?? entry?.message;
+		if (typeof value === 'string' && !isNoiseBody(value, entry)) return compactValue(value);
 		return '';
 	};
 
@@ -244,6 +306,7 @@
 							{@const kind = entryKind(entry)}
 							{@const title = entryTitle(entry)}
 							{@const body = entryBody(entry)}
+							{@const clock = formatClock(entry)}
 							{@const entryDone = isDone(entry) || messageDone}
 							{@const isReasoning = kind === 'reasoning'}
 
@@ -275,12 +338,26 @@
 								<div class="min-w-0 flex-1">
 									<div class="flex items-baseline gap-2 text-[12.5px] leading-[18px]">
 										<span
-											class="truncate {!entryDone
+											class="shrink-0 {!entryDone
 												? 'shimmer'
 												: ''} text-gray-800 dark:text-gray-100"
 										>
 											{title}
 										</span>
+										{#if body}
+											<span
+												class="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[15px] text-gray-500 dark:text-gray-500"
+											>
+												{body}
+											</span>
+										{/if}
+										{#if clock}
+											<span
+												class="ml-auto shrink-0 font-mono text-[10px] leading-[15px] text-gray-400 dark:text-gray-600"
+											>
+												{clock}
+											</span>
+										{/if}
 									</div>
 
 									{#if viewMode === 'trace' && body}

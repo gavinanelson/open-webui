@@ -1448,7 +1448,9 @@
 		if (!scrollRAF) {
 			scrollRAF = requestAnimationFrame(async () => {
 				scrollRAF = null;
-				await scrollToBottom();
+				if (autoScroll) {
+					await scrollToBottom();
+				}
 			});
 		}
 	};
