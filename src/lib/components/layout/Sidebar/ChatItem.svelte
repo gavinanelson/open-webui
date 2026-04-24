@@ -49,7 +49,6 @@
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Document from '$lib/components/icons/Document.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { generateTitle } from '$lib/apis';
 
 	export let className = '';
@@ -101,8 +100,9 @@
 
 	$: unread =
 		id !== $chatId &&
-		!$activeChatIds.has(id) &&
 		(effectiveReadAt === null || (updatedAt !== null && updatedAt > effectiveReadAt));
+
+	$: status = unread ? 'complete' : $activeChatIds.has(id) ? 'working' : null;
 
 	const loadChat = async () => {
 		if (!chat) {
@@ -452,7 +452,7 @@
 				? 'bg-gray-100 dark:bg-gray-900 selected'
 				: selected
 					? 'bg-gray-100 dark:bg-gray-950 selected'
-					: ' group-hover:bg-gray-100 dark:group-hover:bg-gray-950'}  whitespace-nowrap text-ellipsis"
+					: ' group-hover:bg-gray-100 dark:group-hover:bg-gray-950'}  whitespace-nowrap text-ellipsis min-h-8"
 			href="/c/{id}"
 			on:click={() => {
 				dispatch('select');
@@ -485,19 +485,18 @@
 			on:focus={(e) => {}}
 			draggable="false"
 		>
-			<!-- Loading spinner for active chat (left side) -->
-			{#if $activeChatIds.has(id)}
-				<div class="shrink-0 self-center pr-2">
-					<Spinner className="size-3" />
+			{#if status}
+				<div class="shrink-0 self-center pr-2.5 flex">
+					<div
+						class="size-2 rounded-full {status === 'complete'
+							? 'bg-emerald-500/80'
+							: 'bg-sky-500/80 animate-pulse'}"
+						aria-label={status === 'complete' ? $i18n.t('Complete') : $i18n.t('Working')}
+					/>
 				</div>
 			{/if}
 
 			<div class="flex self-center flex-1 w-full min-w-0">
-				{#if unread}
-					<div class="shrink-0 self-center pr-2.5 flex transition-opacity duration-300">
-						<div class="size-1.5 bg-sky-500 rounded-full" />
-					</div>
-				{/if}
 				<div
 					dir="auto"
 					class="text-left self-center overflow-hidden w-full h-[20px] truncate {unread
@@ -508,10 +507,11 @@
 				</div>
 			</div>
 
-			<!-- Time ago indicator -->
-			{#if createdAt && !mouseOver}
-				<div class="shrink-0 self-center text-[10px] text-gray-400 dark:text-gray-500 pl-2">
-					{formatTimeAgo(createdAt)}
+			{#if (updatedAt ?? createdAt) && !mouseOver}
+				<div
+					class="shrink-0 self-center text-[10px] tabular-nums text-gray-500 dark:text-gray-500 pl-2"
+				>
+					{formatTimeAgo(updatedAt ?? createdAt)}
 				</div>
 			{/if}
 		</a>

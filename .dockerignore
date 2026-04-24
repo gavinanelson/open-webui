@@ -1,4 +1,5 @@
 .github
+.git
 .DS_Store
 docs
 kubernetes
@@ -18,3 +19,5 @@ uploads
 **/*.db
 _test
 backend/data/*
+static/pyodide/*
+!static/pyodide/pyodide-lock.json

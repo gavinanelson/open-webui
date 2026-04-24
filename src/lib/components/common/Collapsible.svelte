@@ -174,7 +174,7 @@
 
 	{#if !grow}
 		{#if open && !hide}
-			<div transition:slide={{ duration: 300, easing: quintOut, axis: 'y' }}>
+			<div>
 				<slot name="content" />
 			</div>
 		{/if}

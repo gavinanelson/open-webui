@@ -448,6 +448,46 @@
 		}
 	};
 
+	type StatusEchoEntry = Record<string, unknown>;
+	type StatusEchoMessage = { statusHistory?: StatusEchoEntry[] };
+
+	const normalizedStatusText = (entry: StatusEchoEntry) =>
+		String(
+			entry?.reasoning ??
+				entry?.text ??
+				entry?.description ??
+				entry?.summary ??
+				entry?.preview ??
+				''
+		)
+			.replace(/\s+/g, ' ')
+			.trim();
+
+	const isReasoningStatus = (entry: StatusEchoEntry) => {
+		const blob = `${entry?.event ?? ''} ${entry?.action ?? ''} ${entry?.tool ?? ''}`.toLowerCase();
+		return blob.includes('reasoning');
+	};
+
+	const stripReasoningStatusEcho = (message: StatusEchoMessage, content: unknown) => {
+		const normalizedContent = String(content ?? '')
+			.replace(/\s+/g, ' ')
+			.trim();
+		if (!normalizedContent) return String(content ?? '');
+
+		const echoed = [...(message?.statusHistory ?? [])]
+			.filter(isReasoningStatus)
+			.slice(-6)
+			.some((entry) => {
+				const statusText = normalizedStatusText(entry);
+				return (
+					statusText.length >= 24 &&
+					(normalizedContent === statusText || statusText.endsWith(normalizedContent))
+				);
+			});
+
+		return echoed ? '' : String(content ?? '');
+	};
+
 	const chatEventHandler = async (event, cb) => {
 		console.log(event);
 
@@ -481,9 +521,9 @@
 						message.done = true;
 					}
 				} else if (type === 'chat:message:delta' || type === 'message') {
-					message.content += data.content;
+					message.content += stripReasoningStatusEcho(message, data.content ?? '');
 				} else if (type === 'chat:message' || type === 'replace') {
-					message.content = data.content;
+					message.content = stripReasoningStatusEcho(message, data.content ?? '');
 				} else if (type === 'chat:message:files' || type === 'files') {
 					message.files = data.files;
 				} else if (type === 'chat:message:tasks') {
@@ -1448,7 +1488,9 @@
 		if (!scrollRAF) {
 			scrollRAF = requestAnimationFrame(async () => {
 				scrollRAF = null;
-				await scrollToBottom();
+				if (autoScroll) {
+					await scrollToBottom();
+				}
 			});
 		}
 	};
@@ -1713,6 +1755,7 @@
 			} else {
 				// Stream response
 				let value = choices[0]?.delta?.content ?? '';
+				value = stripReasoningStatusEcho(message, value);
 				if (message.content == '' && value == '\n') {
 					console.log('Empty response');
 				} else {
@@ -1752,7 +1795,7 @@
 
 		if (content) {
 			// REALTIME_CHAT_SAVE is disabled
-			message.content = content;
+			message.content = stripReasoningStatusEcho(message, content);
 
 			if (navigator.vibrate && ($settings?.hapticFeedback ?? false)) {
 				navigator.vibrate(5);

@@ -33,15 +33,19 @@ ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
 
 WORKDIR /app
 
-# to store git revision in build
-RUN apk add --no-cache git
-
 COPY package.json package-lock.json ./
 RUN npm ci --force
 
-COPY . .
+COPY scripts/prepare-pyodide.js ./scripts/prepare-pyodide.js
+COPY static/pyodide/pyodide-lock.json ./static/pyodide/pyodide-lock.json
+RUN npm run pyodide:fetch
+
+COPY src ./src
+COPY static ./static
+COPY CHANGELOG.md ./CHANGELOG.md
+COPY svelte.config.js vite.config.ts tailwind.config.js postcss.config.js tsconfig.json i18next-parser.config.ts ./
 ENV APP_BUILD_HASH=${BUILD_HASH}
-RUN npm run build
+RUN npm run build:frontend
 
 ######## WebUI backend ########
 FROM python:3.11.14-slim-bookworm AS base

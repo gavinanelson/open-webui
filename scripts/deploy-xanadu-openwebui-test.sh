@@ -126,6 +126,15 @@ services:
       OPENAI_API_KEYS: \${OPENAI_API_KEY};\${OPENAI_API_KEY}
       ENABLE_OLLAMA_API: "false"
       WEBUI_URL: ${PUBLIC_URL}
+      RAG_EMBEDDING_MODEL_EAGER_LOAD: "false"
+      INSTALL_TOOL_AND_FUNCTION_DEPS_ON_START: "false"
+      PRELOAD_TOOL_SERVER_SPECS_ON_START: "false"
+      THREAD_POOL_SIZE: "\${OPENWEBUI_TEST_THREAD_POOL_SIZE:-8}"
+      MALLOC_ARENA_MAX: "\${OPENWEBUI_TEST_MALLOC_ARENA_MAX:-2}"
+      OMP_NUM_THREADS: "\${OPENWEBUI_TEST_NUM_THREADS:-1}"
+      MKL_NUM_THREADS: "\${OPENWEBUI_TEST_NUM_THREADS:-1}"
+      OPENBLAS_NUM_THREADS: "\${OPENWEBUI_TEST_NUM_THREADS:-1}"
+      NUMEXPR_NUM_THREADS: "\${OPENWEBUI_TEST_NUM_THREADS:-1}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -161,7 +170,8 @@ volumes:
 YAML
 
 cd "$TEST_DEPLOY_ROOT"
-docker compose -p open-webui-test up -d --force-recreate open-webui-test open-webui-test-pwa-proxy
+docker compose -p open-webui-test up -d --no-deps --force-recreate open-webui-test
+docker compose -p open-webui-test up -d --no-deps open-webui-test-pwa-proxy
 
 # The test stack uses a fresh Open WebUI DB volume. Seed only the prod admin
 # login row (no chats/files/history) so Gavin can use the same login and the
@@ -272,7 +282,7 @@ check_url() {
   return 1
 }
 
-check_url "http://127.0.0.1:${BACKEND_PORT}/health" "200"
+check_url "http://127.0.0.1:${BACKEND_PORT}/ready" "200"
 check_url "http://127.0.0.1:${BACKEND_PORT}/" "200"
 check_url "http://127.0.0.1:${PROXY_PORT}/" "200"
 if [[ "${SKIP_PUBLIC_OPENWEBUI_TEST_CHECK:-}" != "1" ]]; then

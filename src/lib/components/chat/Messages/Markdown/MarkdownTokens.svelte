@@ -382,13 +382,13 @@
 							attributes={detailToken.attributes}
 							resultContent={getDetailTextContent(detailToken)}
 							grouped={true}
-							open={$settings?.expandDetails ?? false}
+							open={false}
 							className="w-full space-y-1"
 						/>
 					{:else if textContent.length > 0}
 						<Collapsible
 							title={detailToken.summary}
-							open={$settings?.expandDetails ?? false}
+							open={false}
 							attributes={detailToken?.attributes}
 							messageDone={done}
 							className="w-full space-y-1"
@@ -430,13 +430,13 @@
 				id={`${id}-${tokenIdx}-tc`}
 				attributes={token.attributes}
 				resultContent={getDetailTextContent(token)}
-				open={$settings?.expandDetails ?? false}
+				open={false}
 				className="w-full space-y-1"
 			/>
 		{:else if textContent.length > 0}
 			<Collapsible
 				title={token.summary}
-				open={$settings?.expandDetails ?? false}
+				open={false}
 				attributes={token?.attributes}
 				messageDone={done}
 				className="w-full space-y-1"

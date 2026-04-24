@@ -1,17 +1,15 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { slide } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
 	import equal from 'fast-deep-equal';
 
 	import StatusItem from './StatusHistory/StatusItem.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 	import Camera from '$lib/components/icons/Camera.svelte';
-	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 	import Wrench from '$lib/components/icons/Wrench.svelte';
 	import Code from '$lib/components/icons/Code.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
+	import Brain from '$lib/components/icons/Brain.svelte';
 
 	export let statusHistory: any[] = [];
 	export let expand = false;
@@ -54,6 +52,56 @@
 		return m > 0 ? `${m}m ${s}s` : `${s}s`;
 	};
 
+	const formatClock = (entry: any) => {
+		const timestamp = timestampOf(entry);
+		if (!timestamp) return '';
+
+		return new Date(timestamp).toLocaleTimeString([], {
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit'
+		});
+	};
+
+	const parseMaybeJSON = (value: any): any => {
+		if (typeof value !== 'string') return value;
+
+		try {
+			return parseMaybeJSON(JSON.parse(value));
+		} catch {
+			return value;
+		}
+	};
+
+	const compactValue = (value: any, limit = 220): string => {
+		const parsed = parseMaybeJSON(value);
+		let text = '';
+
+		if (parsed === null || parsed === undefined || parsed === '') return '';
+		if (typeof parsed === 'string') {
+			text = parsed;
+		} else if (Array.isArray(parsed)) {
+			text = parsed
+				.map((item) => {
+					if (typeof item === 'string') return item;
+					return item?.path ?? item?.name ?? item?.url ?? item?.title ?? JSON.stringify(item);
+				})
+				.filter(Boolean)
+				.join(', ');
+		} else if (typeof parsed === 'object') {
+			const keys = ['query', 'q', 'search', 'path', 'file', 'filename', 'url', 'target', 'input'];
+			const parts = keys
+				.filter((key) => parsed[key] !== undefined && parsed[key] !== null && parsed[key] !== '')
+				.map((key) => `${key}: ${compactValue(parsed[key], 80)}`);
+			text = parts.length > 0 ? parts.join(' · ') : JSON.stringify(parsed);
+		} else {
+			text = String(parsed);
+		}
+
+		text = text.replace(/\s+/g, ' ').trim();
+		return text.length > limit ? `${text.slice(0, limit - 1)}...` : text;
+	};
+
 	const isDone = (entry: any) =>
 		entry?.done === true ||
 		['completed', 'complete', 'done'].includes(String(entry?.status ?? '').toLowerCase());
@@ -76,17 +124,17 @@
 	const kindColor = (kind: EntryKind) => {
 		switch (kind) {
 			case 'reasoning':
-				return 'text-amber-500 dark:text-amber-400';
+				return 'text-rose-500 dark:text-rose-300';
 			case 'browser':
-				return 'text-sky-500 dark:text-sky-400';
+				return 'text-cyan-500 dark:text-cyan-300';
 			case 'search':
-				return 'text-indigo-500 dark:text-indigo-400';
+				return 'text-blue-500 dark:text-blue-300';
 			case 'snapshot':
-				return 'text-violet-500 dark:text-violet-400';
+				return 'text-fuchsia-500 dark:text-fuchsia-300';
 			case 'code':
 				return 'text-emerald-500 dark:text-emerald-400';
 			case 'tool':
-				return 'text-gray-500 dark:text-gray-400';
+				return 'text-slate-500 dark:text-slate-300';
 			default:
 				return 'text-gray-400 dark:text-gray-500';
 		}
@@ -115,10 +163,7 @@
 			return host ? `Visited ${host}` : 'Browsed';
 		}
 		if (kind === 'snapshot') return 'Captured page';
-		if (kind === 'search') {
-			const q = entry?.query ?? entry?.search ?? null;
-			return q ? `Searched "${q}"` : 'Searched';
-		}
+		if (kind === 'search') return 'Searched';
 		if (kind === 'code') return 'Ran code';
 		if (entry?.tool) return humanize(String(entry.tool));
 		if (entry?.action) return humanize(String(entry.action));
@@ -145,18 +190,31 @@
 				entry?.reasoning ?? entry?.text ?? entry?.summary ?? entry?.preview ?? entry?.description;
 			return typeof value === 'string' ? value : '';
 		}
-		const url = entry?.url ?? entry?.target;
-		if (typeof url === 'string' && url.startsWith('http')) return url;
-		const value = entry?.description ?? entry?.text ?? entry?.summary ?? entry?.preview;
-		if (typeof value === 'string' && !isNoiseBody(value, entry)) return value;
+		const detail =
+			entry?.query ??
+			entry?.search ??
+			entry?.q ??
+			entry?.path ??
+			entry?.file ??
+			entry?.filename ??
+			entry?.url ??
+			entry?.target ??
+			entry?.arguments ??
+			entry?.args ??
+			entry?.params ??
+			entry?.input ??
+			entry?.files;
+		const compactDetail = compactValue(detail);
+		if (compactDetail) return compactDetail;
+
+		const value =
+			entry?.description ?? entry?.text ?? entry?.summary ?? entry?.preview ?? entry?.message;
+		if (typeof value === 'string' && !isNoiseBody(value, entry)) return compactValue(value);
 		return '';
 	};
 
 	const setViewMode = (mode: ViewMode) => {
 		viewMode = mode;
-		try {
-			localStorage.setItem('chat-status-view-mode', viewMode);
-		} catch {}
 	};
 
 	const cycleViewMode = () => {
@@ -174,15 +232,9 @@
 	$: startedAt = history.map(timestampOf).find(Boolean) ?? timestampOf(status) ?? now;
 	$: elapsed = formatElapsed(((active ? now : (finishedAt ?? now)) - startedAt) / 1000);
 	$: expanded = viewMode !== 'compact';
-	$: if (expand && viewMode === 'compact') setViewMode('steps');
 
 	onMount(() => {
-		try {
-			const stored = localStorage.getItem('chat-status-view-mode');
-			setViewMode(clampMode(stored ?? visibilityMode));
-		} catch {
-			setViewMode(clampMode(visibilityMode));
-		}
+		setViewMode(expand ? clampMode(visibilityMode) : 'compact');
 		timer = setInterval(() => {
 			if (active) now = Date.now();
 		}, 1000);
@@ -237,7 +289,9 @@
 				</div>
 
 				<!-- mode hint + chevron -->
-				<div class="flex shrink-0 items-center gap-1 text-[10.5px] text-gray-400 dark:text-gray-500">
+				<div
+					class="flex shrink-0 items-center gap-1 text-[10.5px] text-gray-400 dark:text-gray-500"
+				>
 					<span class="font-medium uppercase tracking-wide">{VIEW_LABELS[viewMode]}</span>
 					<div class="transition-transform duration-200 {expanded ? 'rotate-180' : ''}">
 						<ChevronDown className="size-3" strokeWidth="2.5" />
@@ -247,15 +301,13 @@
 
 			<!-- Body: timeline (no rail, just rows) -->
 			{#if expanded}
-				<div
-					transition:slide={{ duration: 220, easing: quintOut, axis: 'y' }}
-					class="border-t border-gray-200/70 dark:border-white/[0.05]"
-				>
+				<div class="border-t border-gray-200/70 dark:border-white/[0.05]">
 					<ul class="px-2.5 py-1.5">
-						{#each history as entry, idx}
+						{#each history as entry}
 							{@const kind = entryKind(entry)}
 							{@const title = entryTitle(entry)}
 							{@const body = entryBody(entry)}
+							{@const clock = formatClock(entry)}
 							{@const entryDone = isDone(entry) || messageDone}
 							{@const isReasoning = kind === 'reasoning'}
 
@@ -267,7 +319,7 @@
 									)} {!entryDone ? 'animate-pulse' : ''}"
 								>
 									{#if isReasoning}
-										<Sparkles className="size-3.5" strokeWidth="2" />
+										<Brain className="size-3.5" strokeWidth="2" />
 									{:else if kind === 'browser'}
 										<GlobeAlt className="size-3.5" strokeWidth="2" />
 									{:else if kind === 'search'}
@@ -287,18 +339,32 @@
 								<div class="min-w-0 flex-1">
 									<div class="flex items-baseline gap-2 text-[12.5px] leading-[18px]">
 										<span
-											class="truncate {!entryDone
+											class="shrink-0 {!entryDone
 												? 'shimmer'
 												: ''} text-gray-800 dark:text-gray-100"
 										>
 											{title}
 										</span>
+										{#if body}
+											<span
+												class="min-w-0 flex-1 truncate font-mono text-[10.5px] leading-[15px] text-gray-500 dark:text-gray-500"
+											>
+												{body}
+											</span>
+										{/if}
+										{#if clock}
+											<span
+												class="ml-auto shrink-0 font-mono text-[10px] leading-[15px] text-gray-400 dark:text-gray-600"
+											>
+												{clock}
+											</span>
+										{/if}
 									</div>
 
 									{#if viewMode === 'trace' && body}
 										{#if isReasoning}
 											<div
-												class="mt-0.5 border-l-2 border-amber-300 pl-2.5 text-[12.5px] italic leading-[18px] text-gray-600 dark:border-amber-400/60 dark:text-gray-300"
+												class="mt-0.5 border-l-2 border-rose-300 pl-2.5 text-[12.5px] italic leading-[18px] text-gray-600 dark:border-rose-300/60 dark:text-gray-300"
 											>
 												<div class="whitespace-pre-wrap break-words">{body}</div>
 											</div>

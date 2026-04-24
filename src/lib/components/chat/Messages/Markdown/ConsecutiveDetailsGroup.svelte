@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { decode } from 'html-entities';
 	import { getContext } from 'svelte';
-	import { slide } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
 
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
@@ -31,7 +29,7 @@
 
 	export let messageDone = true;
 
-	let open = $settings?.expandDetails ?? false;
+	let open = false;
 
 	function parseJSONString(str: string) {
 		try {
@@ -154,14 +152,14 @@
 	</button>
 
 	{#if open}
-		<div transition:slide={{ duration: 300, easing: quintOut, axis: 'y' }}>
+		<div>
 			<div class="mb-0.5 space-y-0.5">
 				<slot name="content" />
 			</div>
 		</div>
 	{/if}
 
-	{#if allEmbeds.length > 0}
+	{#if open && allEmbeds.length > 0}
 		{#each allEmbeds as embedItem, idx}
 			<div id={`${id}-embed-${idx}`}>
 				<FullHeightIframe

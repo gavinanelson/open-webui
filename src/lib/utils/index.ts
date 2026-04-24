@@ -912,7 +912,14 @@ export const cleanText = (content: string) => {
 	return removeFormattings(removeEmojis(content.trim()));
 };
 
-export const removeDetails = (content, types) => {
+export const removeDetails = (content: string, types: string[]) => {
+	for (const type of types) {
+		content = content.replace(
+			new RegExp(`<details\\s+type="${type}"[^>]*>[\\s\\S]*?<\\/details>`, 'gi'),
+			''
+		);
+	}
+
 	return replaceOutsideCode(content, (segment) => {
 		for (const type of types) {
 			segment = segment.replace(

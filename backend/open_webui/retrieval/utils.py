@@ -905,11 +905,47 @@ def get_embedding_function(
     concurrent_requests=0,
 ) -> Awaitable:
     if embedding_engine == '':
+        embedding_function_lock = asyncio.Lock()
+
+        async def get_local_embedding_function():
+            nonlocal embedding_function
+            if embedding_function is not None:
+                return embedding_function
+
+            async with embedding_function_lock:
+                if embedding_function is not None:
+                    return embedding_function
+
+                def load_embedding_function():
+                    from sentence_transformers import SentenceTransformer
+                    from open_webui.config import (
+                        RAG_EMBEDDING_MODEL_AUTO_UPDATE,
+                        RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE,
+                    )
+                    from open_webui.env import (
+                        DEVICE_TYPE,
+                        SENTENCE_TRANSFORMERS_BACKEND,
+                        SENTENCE_TRANSFORMERS_MODEL_KWARGS,
+                    )
+
+                    return SentenceTransformer(
+                        get_model_path(embedding_model, RAG_EMBEDDING_MODEL_AUTO_UPDATE),
+                        device=DEVICE_TYPE,
+                        trust_remote_code=RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE,
+                        backend=SENTENCE_TRANSFORMERS_BACKEND,
+                        model_kwargs=SENTENCE_TRANSFORMERS_MODEL_KWARGS,
+                    )
+
+                log.info(f'Lazy-loading embedding model: {embedding_model}')
+                embedding_function = await asyncio.to_thread(load_embedding_function)
+                return embedding_function
+
         # Sentence transformers: CPU-bound sync operation
         async def async_embedding_function(query, prefix=None, user=None):
+            local_embedding_function = await get_local_embedding_function()
             return await asyncio.to_thread(
                 (
-                    lambda query, prefix=None: embedding_function.encode(
+                    lambda query, prefix=None: local_embedding_function.encode(
                         query,
                         batch_size=int(embedding_batch_size),
                         **({'prompt': prefix} if prefix else {}),

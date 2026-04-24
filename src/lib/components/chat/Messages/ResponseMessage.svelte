@@ -162,6 +162,7 @@
 		(model?.info?.meta?.capabilities?.status_updates ?? true) &&
 		statusEntries.length > 0 &&
 		!(statusEntries.at(-1)?.hidden ?? false);
+	$: visibleMessageContent = removeDetails(message?.content ?? '', ['reasoning']);
 
 	let edit = false;
 	let editedContent = '';
@@ -617,7 +618,11 @@
 				<div class="chat-{message.role} w-full min-w-full markdown-prose">
 					<div>
 						{#if model?.info?.meta?.capabilities?.status_updates ?? true}
-							<StatusHistory statusHistory={statusEntries} {visibilityMode} messageDone={message.done} />
+							<StatusHistory
+								statusHistory={statusEntries}
+								{visibilityMode}
+								messageDone={message.done}
+							/>
 						{/if}
 
 						{#if message?.files && message.files?.filter((f) => f.type === 'image').length > 0}
@@ -738,7 +743,7 @@
 						>
 							{#if message.content === '' && !message.done && !message.error && !hasVisibleStatus}
 								<Skeleton />
-							{:else if message.content && message.error !== true}
+							{:else if visibleMessageContent && message.error !== true}
 								<!-- always show message contents even if there's an error -->
 								<!-- unless message.error === true which is legacy error handling, where the error message is stored in message.content -->
 								<ContentRenderer
@@ -746,7 +751,7 @@
 									messageId={message.id}
 									{history}
 									{selectedModels}
-									content={message.content}
+									content={visibleMessageContent}
 									sources={message.sources}
 									floatingButtons={message?.done &&
 										!readOnly &&
