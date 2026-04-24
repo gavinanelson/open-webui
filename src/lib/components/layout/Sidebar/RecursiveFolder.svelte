@@ -11,7 +11,7 @@
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
-	import { chatId, mobile, selectedFolder, showSidebar } from '$lib/stores';
+	import { activeChatIds, chatId, mobile, selectedFolder, showSidebar } from '$lib/stores';
 
 	import {
 		deleteFolderById,
@@ -43,6 +43,7 @@
 	import FolderModal from './Folders/FolderModal.svelte';
 	import Emoji from '$lib/components/common/Emoji.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { checkActiveChats } from '$lib/apis/tasks';
 
 	export let folderRegistry = {};
 	export let open = false;
@@ -52,6 +53,7 @@
 	export let shiftKey = false;
 
 	export let className = '';
+	export let depth = 0;
 
 	export let deleteFolderContents = true;
 
@@ -277,6 +279,8 @@
 			await tick();
 			renameHandler();
 		}
+
+		setFolderItems();
 	});
 
 	onDestroy(() => {
@@ -371,16 +375,70 @@
 	};
 
 	let chats = null;
+	let loadingChats = false;
+
+	const isUnreadChat = (chat) => {
+		return (
+			chat?.id !== $chatId &&
+			(chat?.last_read_at == null ||
+				(chat?.updated_at != null && chat.updated_at > chat.last_read_at))
+		);
+	};
+
+	$: folderStatus = (chats ?? []).some(isUnreadChat)
+		? 'complete'
+		: (folders[folderId]?.childrenIds ?? []).some((id) => folders[id]?.status === 'complete')
+			? 'complete'
+			: (chats ?? []).some((chat) => $activeChatIds.has(chat.id)) ||
+				  (folders[folderId]?.childrenIds ?? []).some((id) => folders[id]?.status === 'working')
+				? 'working'
+				: null;
+
+	$: folderActivity = Math.max(
+		folders[folderId]?.updated_at ?? 0,
+		...(chats ?? []).map((chat) => chat.updated_at ?? 0),
+		...(folders[folderId]?.childrenIds ?? []).map((id) => folders[id]?.activity_at ?? 0)
+	);
+
+	$: if (folders[folderId] && folderActivity && folders[folderId].activity_at !== folderActivity) {
+		folders[folderId].activity_at = folderActivity;
+		dispatch('activity', { folderId, activityAt: folderActivity, status: folderStatus });
+	}
+
+	$: if (folders[folderId] && folders[folderId].status !== folderStatus) {
+		folders[folderId].status = folderStatus;
+		dispatch('activity', { folderId, activityAt: folderActivity, status: folderStatus });
+	}
+
 	export const setFolderItems = async () => {
 		await tick();
-		if (open) {
-			chats = await getChatListByFolderId(localStorage.token, folderId).catch((error) => {
+		loadingChats = true;
+		chats = await getChatListByFolderId(localStorage.token, folderId).catch((error) => {
+			if (open) {
 				toast.error(`${error}`);
-				return [];
-			});
-		} else {
-			chats = null;
+			}
+			return [];
+		});
+
+		const chatIds = (chats ?? []).map((chat) => chat.id);
+		if (chatIds.length > 0) {
+			const res = await checkActiveChats(localStorage.token, chatIds).catch(() => null);
+			if (res) {
+				activeChatIds.update((ids) => {
+					const next = new Set(ids);
+					for (const id of chatIds) {
+						if (res.active_chat_ids?.includes(id)) {
+							next.add(id);
+						} else {
+							next.delete(id);
+						}
+					}
+					return next;
+				});
+			}
 		}
+
+		loadingChats = false;
 	};
 
 	$: if (open) {
@@ -510,9 +568,9 @@
 		<div class="w-full group">
 			<div
 				id="folder-{folderId}-button"
-				class="relative w-full py-1 px-1.5 rounded-xl flex items-center gap-1.5 hover:bg-gray-100 dark:hover:bg-gray-900 transition {$selectedFolder?.id ===
+				class="relative w-full min-h-9 py-1.5 px-2 rounded-xl flex items-center gap-2 border border-gray-200/80 bg-gray-100/55 text-gray-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] hover:bg-gray-100 dark:border-gray-800/80 dark:bg-gray-900/60 dark:text-gray-100 dark:shadow-none dark:hover:bg-gray-900 transition {$selectedFolder?.id ===
 				folderId
-					? 'bg-gray-100 dark:bg-gray-900 selected'
+					? 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-900/60 dark:bg-sky-950/40 dark:text-sky-100 selected'
 					: ''}"
 				on:dblclick={(e) => {
 					if (clickTimer) {
@@ -551,7 +609,7 @@
 				}}
 			>
 				<button
-					class="text-gray-500 dark:text-gray-500 transition-all p-1 hover:bg-gray-200 dark:hover:bg-gray-850 rounded-lg"
+					class="text-gray-600 dark:text-gray-400 transition-all p-1 hover:bg-gray-200 dark:hover:bg-gray-850 rounded-lg"
 					on:click={(e) => {
 						e.stopPropagation();
 						e.stopImmediatePropagation();
@@ -582,7 +640,14 @@
 					{/if}
 				</button>
 
-				<div class="translate-y-[0.5px] flex-1 justify-start text-start line-clamp-1">
+				{#if !folders[folderId]?.meta?.icon}
+					<FolderOpen
+						className="size-3.5 shrink-0 text-gray-500 dark:text-gray-400"
+						strokeWidth="2.2"
+					/>
+				{/if}
+
+				<div class="translate-y-[0.5px] flex-1 justify-start text-start line-clamp-1 font-medium">
 					{#if edit}
 						<input
 							id="folder-{folderId}-input"
@@ -614,6 +679,16 @@
 					{/if}
 				</div>
 
+				{#if folderStatus && !open}
+					<div
+						class="mr-7 size-2.5 shrink-0 rounded-full ring-2 ring-white dark:ring-gray-950 {folderStatus ===
+						'complete'
+							? 'bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.14)]'
+							: 'bg-sky-500 shadow-[0_0_0_3px_rgba(14,165,233,0.16)] animate-pulse'}"
+						aria-label={folderStatus === 'complete' ? $i18n.t('Complete') : $i18n.t('Working')}
+					/>
+				{/if}
+
 				<button
 					class="absolute z-10 right-2 invisible group-hover:visible self-center flex items-center dark:text-gray-300"
 				>
@@ -643,23 +718,29 @@
 		<div slot="content" class="w-full">
 			{#if (folders[folderId]?.childrenIds ?? []).length > 0 || (chats ?? []).length > 0}
 				<div
-					class="ml-3 pl-1 mt-[1px] flex flex-col overflow-y-auto scrollbar-hidden border-s border-gray-100 dark:border-gray-900"
+					class="ml-5 pl-2 mt-1 flex flex-col overflow-y-auto scrollbar-hidden border-s-2 border-gray-200 dark:border-gray-800"
 				>
 					{#if folders[folderId]?.childrenIds}
 						{@const children = folders[folderId]?.childrenIds
 							.map((id) => folders[id])
-							.sort((a, b) =>
-								a.name.localeCompare(b.name, undefined, {
+							.sort((a, b) => {
+								const activityDiff =
+									(b.activity_at ?? b.updated_at ?? b.created_at ?? 0) -
+									(a.activity_at ?? a.updated_at ?? a.created_at ?? 0);
+								if (activityDiff !== 0) return activityDiff;
+
+								return a.name.localeCompare(b.name, undefined, {
 									numeric: true,
 									sensitivity: 'base'
-								})
-							)}
+								});
+							})}
 
 						{#each children as childFolder (`${folderId}-${childFolder.id}`)}
 							<svelte:self
 								bind:folderRegistry
 								{folders}
 								folderId={childFolder.id}
+								depth={depth + 1}
 								{shiftKey}
 								parentDragged={dragged}
 								{onItemMove}
@@ -672,6 +753,9 @@
 								}}
 								on:change={(e) => {
 									dispatch('change', e.detail);
+								}}
+								on:activity={(e) => {
+									dispatch('activity', e.detail);
 								}}
 							/>
 						{/each}
@@ -693,7 +777,7 @@
 				</div>
 			{/if}
 
-			{#if chats === null}
+			{#if loadingChats && open}
 				<div class="flex justify-center items-center p-2">
 					<Spinner className="size-4 text-gray-500" />
 				</div>
