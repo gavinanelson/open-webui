@@ -29,3 +29,4 @@ const request = async (token: string, path: string) => {
 
 export const getHermesOverview = async (token: string) => request(token, '/overview');
 export const getHermesCommands = async (token: string) => request(token, '/commands');
+export const getHermesRuntimeOptions = async (token: string) => request(token, '/runtime-options');

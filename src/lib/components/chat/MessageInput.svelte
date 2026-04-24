@@ -58,6 +58,7 @@
 	} from '$lib/utils';
 	import { uploadFile } from '$lib/apis/files';
 	import { generateAutoCompletion } from '$lib/apis';
+	import { getHermesRuntimeOptions } from '$lib/apis/hermes';
 	import { deleteFileById } from '$lib/apis/files';
 	import { getChatById } from '$lib/apis/chats';
 	import { getSessionUser } from '$lib/apis/auths';
@@ -120,12 +121,12 @@
 	export let atSelectedModel: Model | undefined = undefined;
 	export let selectedModels: string[] = [''];
 	export let hermesRuntime = {
-		model: 'gpt-5.5',
-		modelLabel: 'GPT-5.5',
-		reasoning: 'medium',
-		reasoningLabel: 'Medium',
-		fast: 'off',
-		fastLabel: 'Normal'
+		model: '',
+		modelLabel: 'Hermes model',
+		reasoning: '',
+		reasoningLabel: 'Reasoning',
+		fast: '',
+		fastLabel: 'Mode'
 	};
 
 	let selectedModelIds = [];
@@ -133,6 +134,7 @@
 	let hermesRuntimeModel = hermesRuntime.modelLabel;
 	let hermesReasoning = hermesRuntime.reasoningLabel;
 	let hermesFastMode = hermesRuntime.fastLabel;
+	let hermesRuntimeOptionsLoaded = false;
 
 	const selectHermesModel = async (model: HermesRuntimeOption) => {
 		hermesRuntime = {
@@ -165,29 +167,54 @@
 	$: hermesReasoning = hermesRuntime.reasoningLabel;
 	$: hermesFastMode = hermesRuntime.fastLabel;
 
+	const normalizeHermesOptions = (options: any[] = []) =>
+		options
+			.map((option) => ({
+				value: String(option?.value ?? '').trim(),
+				label: String(option?.label ?? option?.name ?? option?.value ?? '').trim()
+			}))
+			.filter((option) => option.value && option.label);
+
+	const loadHermesRuntimeOptions = async () => {
+		if (!localStorage.token) {
+			return;
+		}
+
+		const runtimeOptions = await getHermesRuntimeOptions(localStorage.token).catch((error) => {
+			console.error(error);
+			return null;
+		});
+		if (!runtimeOptions) {
+			return;
+		}
+
+		HERMES_RUNTIME_MODELS = normalizeHermesOptions(runtimeOptions.model_options);
+		HERMES_REASONING_LEVELS = normalizeHermesOptions(runtimeOptions.reasoning_options);
+		HERMES_FAST_MODES = normalizeHermesOptions(runtimeOptions.fast_options);
+
+		const current = runtimeOptions.current ?? {};
+		const currentModel = HERMES_RUNTIME_MODELS.find((option) => option.value === current.model);
+		const currentReasoning = HERMES_REASONING_LEVELS.find((option) => option.value === current.reasoning);
+		const currentFast = HERMES_FAST_MODES.find((option) => option.value === current.fast);
+
+		hermesRuntime = {
+			model: currentModel?.value ?? hermesRuntime.model,
+			modelLabel: currentModel?.label ?? hermesRuntime.modelLabel,
+			reasoning: currentReasoning?.value ?? hermesRuntime.reasoning,
+			reasoningLabel: currentReasoning?.label ?? hermesRuntime.reasoningLabel,
+			fast: currentFast?.value ?? hermesRuntime.fast,
+			fastLabel: currentFast?.label ?? hermesRuntime.fastLabel
+		};
+		hermesRuntimeOptionsLoaded = true;
+		dispatch('hermes-runtime-change', hermesRuntime);
+	};
+
 	const compactSelectorClass =
 		'flex max-w-[13rem] items-center gap-1 truncate rounded-lg px-2 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800';
 
-	const HERMES_RUNTIME_MODELS = [
-		{ label: 'GPT-5.5', value: 'gpt-5.5' },
-		{ label: 'GPT-5.4', value: 'gpt-5.4' },
-		{ label: 'GPT-5.4-Mini', value: 'gpt-5.4-mini' },
-		{ label: 'GPT-5.3-Codex', value: 'gpt-5.3-codex' },
-		{ label: 'GPT-5.3-Codex-Spark', value: 'gpt-5.3-codex-spark' },
-		{ label: 'GPT-5.2', value: 'gpt-5.2' }
-	];
-
-	const HERMES_REASONING_LEVELS = [
-		{ label: 'Low', value: 'low' },
-		{ label: 'Medium', value: 'medium' },
-		{ label: 'High', value: 'high' },
-		{ label: 'Extra High', value: 'xhigh' }
-	];
-
-	const HERMES_FAST_MODES = [
-		{ label: 'On', value: 'on' },
-		{ label: 'Off', value: 'off' }
-	];
+	let HERMES_RUNTIME_MODELS: HermesRuntimeOption[] = [];
+	let HERMES_REASONING_LEVELS: HermesRuntimeOption[] = [];
+	let HERMES_FAST_MODES: HermesRuntimeOption[] = [];
 
 	const HERMES_COMMAND_GROUPS = [
 		{
@@ -1027,6 +1054,8 @@
 	};
 
 	onMount(() => {
+		loadHermesRuntimeOptions();
+
 		suggestions = [
 			{
 				char: '@',
@@ -1801,28 +1830,34 @@
 													</div>
 												</div>
 												<div class="max-h-72 overflow-y-auto px-1.5 pb-1.5">
-													{#each HERMES_RUNTIME_MODELS as model, modelIndex (model.value)}
-														<button
-															type="button"
-															class="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition {hermesRuntimeModel ===
-															model.label
-																? 'bg-blue-50 text-gray-900 dark:bg-blue-500/20 dark:text-gray-50'
-																: 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-850'}"
-															on:click={() => selectHermesModel(model)}
-														>
-															<span class="flex min-w-0 items-center gap-2">
-																<span class="w-3 text-gray-400">
-																	{hermesRuntimeModel === model.label ? '*' : ''}
-																</span>
-																<span class="line-clamp-1 text-sm">{model.label}</span>
-															</span>
-															<span
-																class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+													{#if HERMES_RUNTIME_MODELS.length > 0}
+														{#each HERMES_RUNTIME_MODELS as model, modelIndex (model.value)}
+															<button
+																type="button"
+																class="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition {hermesRuntimeModel ===
+																model.label
+																	? 'bg-blue-50 text-gray-900 dark:bg-blue-500/20 dark:text-gray-50'
+																	: 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-850'}"
+																on:click={() => selectHermesModel(model)}
 															>
-																Ctrl+{modelIndex + 1}
-															</span>
-														</button>
-													{/each}
+																<span class="flex min-w-0 items-center gap-2">
+																	<span class="w-3 text-gray-400">
+																		{hermesRuntimeModel === model.label ? '*' : ''}
+																	</span>
+																	<span class="line-clamp-1 text-sm">{model.label}</span>
+																</span>
+																<span
+																	class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
+																>
+																	Ctrl+{modelIndex + 1}
+																</span>
+															</button>
+														{/each}
+													{:else}
+														<div class="px-2 py-6 text-center text-sm text-gray-500">
+															{hermesRuntimeOptionsLoaded ? 'No Hermes models exposed' : 'Loading Hermes models...'}
+														</div>
+													{/if}
 												</div>
 											</div>
 										</Dropdown>
@@ -1848,20 +1883,16 @@
 													</div>
 													<div class="space-y-0.5">
 														{#each HERMES_REASONING_LEVELS as reasoning}
-															<button
-																type="button"
-																class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"
-																on:click={() => selectHermesReasoning(reasoning)}
-															>
-																<span class="w-3 text-gray-600 dark:text-gray-300">
-																	{hermesReasoning === reasoning.label ? '✓' : ''}
-																</span>
-																<span
-																	>{reasoning.label}{reasoning.value === 'medium'
-																		? ' (default)'
-																		: ''}</span
+																<button
+																	type="button"
+																	class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"
+																	on:click={() => selectHermesReasoning(reasoning)}
 																>
-															</button>
+																	<span class="w-3 text-gray-600 dark:text-gray-300">
+																		{hermesReasoning === reasoning.label ? '✓' : ''}
+																	</span>
+																	<span>{reasoning.label}</span>
+																</button>
 														{/each}
 													</div>
 												</div>
@@ -1913,7 +1944,7 @@
 																<button
 																	type="button"
 																	class="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-gray-50 dark:hover:bg-gray-850"
-																	on:click={() => runHermesCommand(item.command)}
+																	on:click={() => insertTextAtCursor(item.command)}
 																>
 																	<div class="font-mono text-xs text-gray-700 dark:text-gray-200">
 																		{item.command}

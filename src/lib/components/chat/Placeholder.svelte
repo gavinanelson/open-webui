@@ -40,12 +40,12 @@
 	export let atSelectedModel: Model | undefined;
 	export let selectedModels: string[] = [''];
 	export let hermesRuntime = {
-		model: 'gpt-5.5',
-		modelLabel: 'GPT-5.5',
-		reasoning: 'medium',
-		reasoningLabel: 'Medium',
-		fast: 'off',
-		fastLabel: 'Normal'
+		model: '',
+		modelLabel: 'Hermes model',
+		reasoning: '',
+		reasoningLabel: 'Reasoning',
+		fast: '',
+		fastLabel: 'Mode'
 	};
 
 	export let history;
