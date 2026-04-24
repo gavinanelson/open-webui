@@ -51,7 +51,7 @@ jobs:
           build-args: |
             BUILD_HASH=${{ github.sha }}
             USE_SLIM=true
-            NODE_MAX_OLD_SPACE_SIZE=2048
+            NODE_MAX_OLD_SPACE_SIZE=4096
 
   deploy-test:
     name: Deploy Open WebUI test stack to xanadu-host
@@ -87,6 +87,13 @@ jobs:
           echo "branch=${GITHUB_REF_NAME}"
           git rev-parse HEAD
 
+      - name: Capture production canary before test deploy
+        run: |
+          set -euo pipefail
+          docker inspect hermes-open-webui --format 'restarts={{.RestartCount}} started={{.State.StartedAt}} status={{.State.Status}} oom={{.State.OOMKilled}}' | tee /tmp/openwebui-prod-canary-before.txt
+          curl -k -sS -o /tmp/openwebui-prod-canary-body -w 'prod_before code=%{http_code} total=%{time_total}\n' https://chat.yxanadu.com/
+          grep -q 'restarts=' /tmp/openwebui-prod-canary-before.txt
+
       - name: Deploy test stack to xanadu-host
         env:
           GITHUB_REF_NAME: ${{ github.ref_name }}
@@ -111,3 +118,23 @@ jobs:
             echo
             echo
           done
+
+      - name: Verify production stayed up during test deploy
+        run: |
+          set -euo pipefail
+          before_restarts=$(sed -n 's/.*restarts=\([0-9][0-9]*\).*/\1/p' /tmp/openwebui-prod-canary-before.txt)
+          after_state=$(docker inspect hermes-open-webui --format 'restarts={{.RestartCount}} started={{.State.StartedAt}} status={{.State.Status}} oom={{.State.OOMKilled}}')
+          echo "prod_before $(cat /tmp/openwebui-prod-canary-before.txt)"
+          echo "prod_after  ${after_state}"
+          after_restarts=$(printf '%s\n' "$after_state" | sed -n 's/.*restarts=\([0-9][0-9]*\).*/\1/p')
+          code=$(curl -k -sS -o /tmp/openwebui-prod-canary-body -w '%{http_code}' https://chat.yxanadu.com/)
+          echo "prod_after code=$code"
+          test "$code" = "200"
+          if [[ -z "$before_restarts" || -z "$after_restarts" ]]; then
+            echo "Could not parse production restart counters" >&2
+            exit 1
+          fi
+          if [[ "$after_restarts" != "$before_restarts" ]]; then
+            echo "Production Open WebUI restarted during testing deploy; failing test deploy to prevent silent interference." >&2
+            exit 1
+          fi

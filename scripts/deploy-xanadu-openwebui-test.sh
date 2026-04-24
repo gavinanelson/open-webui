@@ -66,15 +66,15 @@ storage_maintenance() {
 
 storage_maintenance preflight
 
-echo "Building $IMAGE_NAME:$SHORT_SHA and $IMAGE_NAME:$IMAGE_TAG from $BRANCH_NAME @ $SHORT_SHA"
+echo "Preparing $IMAGE_NAME:$SHORT_SHA and $IMAGE_NAME:$IMAGE_TAG from $BRANCH_NAME @ $SHORT_SHA"
 if [[ -n "${OPENWEBUI_TEST_IMAGE:-}" ]]; then
   echo "Using off-host built image for test deploy: $OPENWEBUI_TEST_IMAGE"
   docker pull "$OPENWEBUI_TEST_IMAGE"
   docker tag "$OPENWEBUI_TEST_IMAGE" "$IMAGE_NAME:$SHORT_SHA"
   docker tag "$OPENWEBUI_TEST_IMAGE" "$IMAGE_NAME:$IMAGE_TAG"
-else
-  echo "OPENWEBUI_TEST_IMAGE not set; using constrained local fallback build."
-  echo "This path is intentionally memory-limited so it fails instead of starving production."
+elif [[ "${ALLOW_LOCAL_TEST_BUILD:-}" == "1" ]]; then
+  echo "ALLOW_LOCAL_TEST_BUILD=1 set; using constrained local fallback build."
+  echo "This path is memory-limited and should be used only for emergency manual recovery, not normal testing deploys."
   DOCKER_BUILDKIT=0 docker build \
     --memory="${OPENWEBUI_TEST_BUILD_MEMORY:-3g}" \
     --memory-swap="${OPENWEBUI_TEST_BUILD_MEMORY_SWAP:-4g}" \
@@ -84,6 +84,11 @@ else
     -t "$IMAGE_NAME:$SHORT_SHA" \
     -t "$IMAGE_NAME:$IMAGE_TAG" \
     "$REPO_ROOT"
+else
+  echo "Refusing local test Docker build on xanadu-host." >&2
+  echo "Set OPENWEBUI_TEST_IMAGE to an off-host-built GHCR image; normal GitHub testing deploys do this automatically." >&2
+  echo "Emergency-only override: ALLOW_LOCAL_TEST_BUILD=1, with memory limits still applied." >&2
+  exit 64
 fi
 
 mkdir -p "$TEST_DEPLOY_ROOT"
@@ -122,6 +127,9 @@ services:
     volumes:
       - open-webui-test-data:/app/backend/data
       - ${PROD_DEPLOY_ROOT}/hermes-native:/app/backend/data/hermes-native:ro
+    mem_limit: ${OPENWEBUI_TEST_MEMORY_LIMIT:-3g}
+    memswap_limit: ${OPENWEBUI_TEST_MEMORY_SWAP_LIMIT:-4g}
+    cpus: "${OPENWEBUI_TEST_CPUS:-2.0}"
     restart: unless-stopped
 
   open-webui-test-pwa-proxy:
@@ -140,6 +148,8 @@ services:
       - ./loader.js:/srv/static/loader.js:ro
       - ./service-worker.js:/srv/service-worker.js:ro
       - ./stale-app-entry-rescue.js:/srv/stale-app-entry-rescue.js:ro
+    mem_limit: ${OPENWEBUI_TEST_PROXY_MEMORY_LIMIT:-256m}
+    cpus: "${OPENWEBUI_TEST_PROXY_CPUS:-0.5}"
     restart: unless-stopped
 
 volumes:
