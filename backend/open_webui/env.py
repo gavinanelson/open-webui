@@ -1032,6 +1032,12 @@ ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS = (
     os.environ.get('ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS', 'True').lower() == 'true'
 )
 
+INSTALL_TOOL_AND_FUNCTION_DEPS_ON_START = (
+    os.environ.get('INSTALL_TOOL_AND_FUNCTION_DEPS_ON_START', 'True').lower() == 'true'
+)
+
+PRELOAD_TOOL_SERVER_SPECS_ON_START = os.environ.get('PRELOAD_TOOL_SERVER_SPECS_ON_START', 'True').lower() == 'true'
+
 PIP_OPTIONS = os.getenv('PIP_OPTIONS', '').split()
 PIP_PACKAGE_INDEX_OPTIONS = os.getenv('PIP_PACKAGE_INDEX_OPTIONS', '').split()
 

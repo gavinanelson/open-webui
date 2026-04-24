@@ -244,6 +244,7 @@ from open_webui.config import (
     BYPASS_EMBEDDING_AND_RETRIEVAL,
     RAG_EMBEDDING_MODEL,
     RAG_EMBEDDING_MODEL_AUTO_UPDATE,
+    RAG_EMBEDDING_MODEL_EAGER_LOAD,
     RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE,
     RAG_RERANKING_ENGINE,
     RAG_RERANKING_MODEL,
@@ -530,6 +531,8 @@ from open_webui.env import (
     WEBUI_ADMIN_NAME,
     ENABLE_EASTER_EGGS,
     LOG_FORMAT,
+    INSTALL_TOOL_AND_FUNCTION_DEPS_ON_START,
+    PRELOAD_TOOL_SERVER_SPECS_ON_START,
     # OAuth Back-Channel Logout
     ENABLE_OAUTH_BACKCHANNEL_LOGOUT,
 )
@@ -656,10 +659,13 @@ async def lifespan(app: FastAPI):
     if SAFE_MODE:
         await Functions.deactivate_all_functions()
 
-    # This should be blocking (sync) so functions are not deactivated on first /get_models calls
-    # when the first user lands on the / route.
-    log.info('Installing external dependencies of functions and tools...')
-    await install_tool_and_function_dependencies()
+    if INSTALL_TOOL_AND_FUNCTION_DEPS_ON_START:
+        # This should be blocking so functions are not deactivated on first /get_models calls
+        # when the first user lands on the / route.
+        log.info('Installing external dependencies of functions and tools...')
+        await install_tool_and_function_dependencies()
+    else:
+        log.info('Skipping startup install of function/tool dependencies')
 
     app.state.redis = get_redis_connection(
         redis_url=REDIS_URL,
@@ -707,7 +713,7 @@ async def lifespan(app: FastAPI):
             log.warning(f'Failed to pre-fetch models at startup: {e}')
 
     # Pre-fetch tool server specs so the first request doesn't pay the latency cost
-    if len(app.state.config.TOOL_SERVER_CONNECTIONS) > 0:
+    if PRELOAD_TOOL_SERVER_SPECS_ON_START and len(app.state.config.TOOL_SERVER_CONNECTIONS) > 0:
         log.info('Initializing tool servers...')
         try:
             mock_request = Request(
@@ -732,6 +738,8 @@ async def lifespan(app: FastAPI):
             log.info(f'Initialized {len(app.state.TERMINAL_SERVERS)} terminal server(s)')
         except Exception as e:
             log.warning(f'Failed to initialize tool/terminal servers at startup: {e}')
+    elif not PRELOAD_TOOL_SERVER_SPECS_ON_START:
+        log.info('Skipping startup preload of tool/terminal servers')
 
     # Mark application as ready to accept traffic from a startup perspective.
     app.state.startup_complete = True
@@ -1045,6 +1053,7 @@ app.state.config.CHUNK_OVERLAP = CHUNK_OVERLAP
 
 app.state.config.RAG_EMBEDDING_ENGINE = RAG_EMBEDDING_ENGINE
 app.state.config.RAG_EMBEDDING_MODEL = RAG_EMBEDDING_MODEL
+app.state.config.RAG_EMBEDDING_MODEL_EAGER_LOAD = RAG_EMBEDDING_MODEL_EAGER_LOAD
 app.state.config.RAG_EMBEDDING_BATCH_SIZE = RAG_EMBEDDING_BATCH_SIZE
 app.state.config.ENABLE_ASYNC_EMBEDDING = ENABLE_ASYNC_EMBEDDING
 app.state.config.RAG_EMBEDDING_CONCURRENT_REQUESTS = RAG_EMBEDDING_CONCURRENT_REQUESTS
@@ -1152,7 +1161,8 @@ app.state.YOUTUBE_LOADER_TRANSLATION = None
 
 
 try:
-    app.state.ef = get_ef(app.state.config.RAG_EMBEDDING_ENGINE, app.state.config.RAG_EMBEDDING_MODEL)
+    if app.state.config.RAG_EMBEDDING_MODEL_EAGER_LOAD:
+        app.state.ef = get_ef(app.state.config.RAG_EMBEDDING_ENGINE, app.state.config.RAG_EMBEDDING_MODEL)
     if app.state.config.ENABLE_RAG_HYBRID_SEARCH and not app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL:
         app.state.rf = get_rf(
             app.state.config.RAG_RERANKING_ENGINE,

@@ -59,6 +59,53 @@ storage_maintenance preflight
 echo "Building $IMAGE_NAME:$SHORT_SHA and $IMAGE_NAME:$IMAGE_TAG from $BRANCH_NAME @ $SHORT_SHA"
 docker build -t "$IMAGE_NAME:$SHORT_SHA" -t "$IMAGE_NAME:$IMAGE_TAG" "$REPO_ROOT"
 
+python3 - <<'PY' "$COMPOSE_FILE"
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+lines = path.read_text().splitlines()
+
+try:
+    service_idx = lines.index('  open-webui:')
+except ValueError:
+    raise SystemExit(0)
+
+next_service_idx = next(
+    (i for i in range(service_idx + 1, len(lines)) if lines[i].startswith('  ') and not lines[i].startswith('    ')),
+    len(lines),
+)
+try:
+    env_idx = next(i for i in range(service_idx + 1, next_service_idx) if lines[i] == '    environment:')
+except StopIteration:
+    raise SystemExit(0)
+
+desired = {
+    'RAG_EMBEDDING_MODEL_EAGER_LOAD': '"false"',
+    'INSTALL_TOOL_AND_FUNCTION_DEPS_ON_START': '"false"',
+    'PRELOAD_TOOL_SERVER_SPECS_ON_START': '"false"',
+    'THREAD_POOL_SIZE': '${OPENWEBUI_THREAD_POOL_SIZE:-8}',
+    'MALLOC_ARENA_MAX': '${OPENWEBUI_MALLOC_ARENA_MAX:-2}',
+    'OMP_NUM_THREADS': '${OPENWEBUI_NUM_THREADS:-1}',
+    'MKL_NUM_THREADS': '${OPENWEBUI_NUM_THREADS:-1}',
+    'OPENBLAS_NUM_THREADS': '${OPENWEBUI_NUM_THREADS:-1}',
+    'NUMEXPR_NUM_THREADS': '${OPENWEBUI_NUM_THREADS:-1}',
+}
+insert_at = env_idx + 1
+for key, value in desired.items():
+    replacement = f'      {key}: {value}'
+    for idx in range(env_idx + 1, next_service_idx):
+        if lines[idx].startswith('      ') and lines[idx].strip().split(':', 1)[0] == key:
+            lines[idx] = replacement
+            break
+    else:
+        lines.insert(insert_at, replacement)
+        next_service_idx += 1
+        insert_at += 1
+
+path.write_text('\n'.join(lines) + '\n')
+PY
+
 python3 - <<'PY' "$COMPOSE_FILE" "$IMAGE_NAME:$IMAGE_TAG"
 from pathlib import Path
 import re, sys
@@ -72,7 +119,8 @@ path.write_text(new_text)
 PY
 
 cd "$DEPLOY_ROOT"
-docker compose up -d --force-recreate open-webui open-webui-pwa-proxy
+docker compose up -d --no-deps --force-recreate open-webui
+docker compose up -d --no-deps open-webui-pwa-proxy
 "$SYNC_SCRIPT"
 
 python3 - <<'PY' "$DEPLOY_DOC" "$REPO_URL" "$BRANCH_NAME" "$FULL_SHA" "$SHORT_SHA" "$VERSION"
@@ -150,7 +198,7 @@ check_url() {
   return 1
 }
 
-check_url "http://127.0.0.1:3013/health" "200"
+check_url "http://127.0.0.1:3013/ready" "200"
 check_url "http://127.0.0.1:3013/" "200"
 check_url "http://127.0.0.1:3012/" "200"
 check_url "https://chat.yxanadu.com/" "200"

@@ -113,7 +113,7 @@ jobs:
           for url in \
             https://chat-test.yxanadu.com/ \
             https://chat-test.yxanadu.com/api/version \
-            http://127.0.0.1:3023/health
+            http://127.0.0.1:3023/ready
           do
             echo "checking $url"
             code=$(curl -k -sS -o /tmp/openwebui-test-check -w '%{http_code}' "$url")
