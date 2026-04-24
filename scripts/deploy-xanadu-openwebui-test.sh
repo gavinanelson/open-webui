@@ -222,6 +222,174 @@ subprocess.run(['docker', 'exec', '-i', 'hermes-open-webui-test', 'python3', '-c
 PY
 fi
 
+if [[ "${OPENWEBUI_TEST_SEED_STATUS_BOARDS:-1}" == "1" ]]; then
+  docker exec hermes-open-webui-test python3 - <<'PY'
+import json
+import secrets
+import sqlite3
+import time
+
+DB = '/app/backend/data/webui.db'
+FIXTURE_PREFIX = 'xanadu-status-fixture'
+
+boards = [
+    {
+        'slug': 'daily-briefing-pipeline',
+        'name': 'daily-briefing-pipeline',
+        'description': 'Fixture board for scheduled daily brief generation.',
+        'webhook': 'Daily Brief Cron',
+        'messages': [
+            '[07:00] Started daily briefing run. Pulling calendar, unread notes, and overnight Hermes activity.',
+            '[07:01] Calendar sync complete: 6 events indexed, 2 require travel-time padding.',
+            '[07:03] Draft ready. Waiting on Hermes summarizer response for final risk notes.',
+            '[07:04] Completed successfully. Next run scheduled for tomorrow at 07:00.',
+        ],
+    },
+    {
+        'slug': 'hermes-harness-watch',
+        'name': 'hermes-harness-watch',
+        'description': 'Fixture board for Hermes harness health and agent checks.',
+        'webhook': 'Hermes Harness',
+        'messages': [
+            '[15:20] Agent catalog refresh started against real Hermes backends on 8642 and 8652.',
+            '[15:21] 18 agents reachable. 2 agents reported warmup latency above threshold.',
+            '[15:23] Smoke prompt passed for planner, researcher, and coding agents.',
+            '[15:24] Warning: browser-worker queue depth is elevated but draining.',
+        ],
+    },
+    {
+        'slug': 'backup-integrity-check',
+        'name': 'backup-integrity-check',
+        'description': 'Fixture board for nightly backup validation.',
+        'webhook': 'Backup Verifier',
+        'messages': [
+            '[02:10] Snapshot verification started for project volumes and Open WebUI test data.',
+            '[02:14] Manifest hashes match for 42/42 project archives.',
+            '[02:17] Restore probe completed in sandbox. Test database opened cleanly.',
+            '[02:18] Completed with no action required.',
+        ],
+    },
+]
+
+now = int(time.time_ns())
+conn = sqlite3.connect(DB)
+cur = conn.cursor()
+admin = cur.execute("SELECT id FROM user WHERE role='admin' ORDER BY created_at LIMIT 1").fetchone()
+if not admin:
+    raise SystemExit('cannot seed status boards without an admin user')
+
+admin_id = admin[0]
+for board_index, board in enumerate(boards):
+    channel_id = f"{FIXTURE_PREFIX}-{board['slug']}"
+    webhook_id = f"{channel_id}-webhook"
+    created_at = now - ((len(boards) - board_index) * 24 * 60 * 60 * 1_000_000_000)
+    updated_at = created_at + (len(board['messages']) * 60 * 1_000_000_000)
+
+    cur.execute(
+        """
+        INSERT INTO channel (
+            id, user_id, type, name, description, is_private, data, meta,
+            created_at, updated_at, updated_by, archived_at, archived_by, deleted_at, deleted_by
+        )
+        VALUES (?, ?, 'status', ?, ?, NULL, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL)
+        ON CONFLICT(id) DO UPDATE SET
+            type=excluded.type,
+            name=excluded.name,
+            description=excluded.description,
+            data=excluded.data,
+            meta=excluded.meta,
+            updated_at=excluded.updated_at,
+            updated_by=excluded.updated_by,
+            archived_at=NULL,
+            archived_by=NULL,
+            deleted_at=NULL,
+            deleted_by=NULL
+        """,
+        (
+            channel_id,
+            admin_id,
+            board['name'],
+            board['description'],
+            json.dumps({'fixture': True, 'source': 'deploy-xanadu-openwebui-test'}),
+            json.dumps({'fixture': True, 'status_board': True}),
+            created_at,
+            updated_at,
+            admin_id,
+        ),
+    )
+
+    for permission in ('read', 'write'):
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO access_grant (
+                id, resource_type, resource_id, principal_type, principal_id, permission, created_at
+            )
+            VALUES (?, 'channel', ?, 'user', '*', ?, ?)
+            """,
+            (f'{channel_id}-public-{permission}', channel_id, permission, created_at),
+        )
+
+    cur.execute(
+        """
+        INSERT INTO channel_webhook (
+            id, channel_id, user_id, name, profile_image_url, token, last_used_at, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            name=excluded.name,
+            last_used_at=excluded.last_used_at,
+            updated_at=excluded.updated_at
+        """,
+        (
+            webhook_id,
+            channel_id,
+            admin_id,
+            board['webhook'],
+            secrets.token_urlsafe(24),
+            updated_at,
+            created_at,
+            updated_at,
+        ),
+    )
+
+    for message_index, content in enumerate(board['messages']):
+        message_id = f'{channel_id}-message-{message_index + 1}'
+        ts = created_at + ((message_index + 1) * 60 * 1_000_000_000)
+        cur.execute(
+            """
+            INSERT INTO message (
+                id, user_id, channel_id, reply_to_id, parent_id, is_pinned, pinned_at, pinned_by,
+                content, data, meta, created_at, updated_at
+            )
+            VALUES (?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                content=excluded.content,
+                data=excluded.data,
+                meta=excluded.meta,
+                updated_at=excluded.updated_at
+            """,
+            (
+                message_id,
+                admin_id,
+                channel_id,
+                1 if message_index == len(board['messages']) - 1 else 0,
+                ts if message_index == len(board['messages']) - 1 else None,
+                admin_id if message_index == len(board['messages']) - 1 else None,
+                content,
+                json.dumps({'fixture': True}),
+                json.dumps({'webhook': {'id': webhook_id}, 'fixture': True}),
+                ts,
+                ts,
+            ),
+        )
+
+conn.commit()
+print(f'Seeded {len(boards)} status board fixtures.')
+PY
+else
+  echo "Skipping status board fixture seed: OPENWEBUI_TEST_SEED_STATUS_BOARDS=${OPENWEBUI_TEST_SEED_STATUS_BOARDS:-}"
+fi
+
 OPENWEBUI_CONTAINER=hermes-open-webui-test \
 OPENWEBUI_ROOT="$TEST_DEPLOY_ROOT" \
 OPENWEBUI_CATALOG_ROOT="$PROD_DEPLOY_ROOT/hermes-native" \

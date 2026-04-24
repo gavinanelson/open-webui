@@ -15,6 +15,7 @@
 	import Sidebar from '../icons/Sidebar.svelte';
 	import Hashtag from '../icons/Hashtag.svelte';
 	import Lock from '../icons/Lock.svelte';
+	import ClockRotateRight from '../icons/ClockRotateRight.svelte';
 	import UserAlt from '../icons/UserAlt.svelte';
 	import ChannelInfoModal from './ChannelInfoModal.svelte';
 	import Users from '../icons/Users.svelte';
@@ -131,7 +132,9 @@
 							{/if}
 						{:else}
 							<div class=" size-4.5 justify-center flex items-center">
-								{#if isPublicChannel(channel)}
+								{#if channel?.type === 'status'}
+									<ClockRotateRight className="size-3.5" strokeWidth="2.5" />
+								{:else if isPublicChannel(channel)}
 									<Hashtag className="size-3.5" strokeWidth="2.5" />
 								{:else}
 									<Lock className="size-5" strokeWidth="2" />

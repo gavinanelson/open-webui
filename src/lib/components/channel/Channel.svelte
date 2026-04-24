@@ -291,7 +291,7 @@
 				}, '')} • Open WebUI</title
 		>
 	{:else}
-		<title>#{channel?.name ?? 'Channel'} • Open WebUI</title>
+		<title>{channel?.type === 'status' ? '' : '#'}{channel?.name ?? 'Channel'} • Open WebUI</title>
 	{/if}
 </svelte:head>
 

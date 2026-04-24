@@ -86,6 +86,7 @@
 
 	let selectedChatId = null;
 	let showCreateChannel = false;
+	let createChannelType = '';
 
 	// Pagination variables
 	let chatListLoading = false;
@@ -97,6 +98,7 @@
 
 	let showPinnedModels = false;
 	let showPinnedNotes = false;
+	let showStatusBoards = false;
 	let showChannels = false;
 	let showFolders = false;
 
@@ -106,6 +108,8 @@
 	let newFolderId = null;
 
 	$: pinnedItems = $settings?.pinnedMenuItems ?? DEFAULT_PINNED_ITEMS;
+	$: statusBoards = ($channels ?? []).filter((channel) => channel?.type === 'status');
+	$: discussionChannels = ($channels ?? []).filter((channel) => channel?.type !== 'status');
 
 	const isMenuItemVisible = (id) => {
 		switch (id) {
@@ -259,7 +263,7 @@
 	};
 
 	const initChannels = async () => {
-		// default (none), group, dm type
+		// default (none), status, group, dm type
 		const res = await getChannels(localStorage.token).catch((error) => {
 			return null;
 		});
@@ -268,7 +272,8 @@
 			await channels.set(
 				res.sort(
 					(a, b) =>
-						['', null, 'group', 'dm'].indexOf(a.type) - ['', null, 'group', 'dm'].indexOf(b.type)
+						['status', '', null, 'group', 'dm'].indexOf(a.type) -
+						['status', '', null, 'group', 'dm'].indexOf(b.type)
 				)
 			);
 		}
@@ -701,6 +706,7 @@
 
 <ChannelModal
 	bind:show={showCreateChannel}
+	initialType={createChannelType}
 	onSubmit={async (payload: any) => {
 		let { type, name, is_private, access_grants, group_ids, user_ids } = payload ?? {};
 		name = name?.trim();
@@ -733,7 +739,11 @@
 			$socket.emit('join-channels', { auth: { token: $user?.token } });
 			await initChannels();
 			showCreateChannel = false;
-			showChannels = true;
+			if (res.type === 'status') {
+				showStatusBoards = true;
+			} else {
+				showChannels = true;
+			}
 			goto(`/channels/${res.id}`);
 		}
 	}}
@@ -1264,6 +1274,37 @@
 					</Folder>
 				{/if}
 
+				{#if $config?.features?.enable_channels && ($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true)) && ($user?.role === 'admin' || statusBoards.length > 0)}
+					<Folder
+						id="sidebar-status-boards"
+						bind:open={showStatusBoards}
+						className="px-2 mt-0.5"
+						name={$i18n.t('Status Boards')}
+						chevron={false}
+						dragAndDrop={false}
+						onAdd={$user?.role === 'admin'
+							? async () => {
+									await tick();
+
+									setTimeout(() => {
+										createChannelType = 'status';
+										showCreateChannel = true;
+									}, 0);
+								}
+							: null}
+						onAddLabel={$i18n.t('Create Status Board')}
+					>
+						{#each statusBoards as channel (`status-${channel?.id}`)}
+							<ChannelItem
+								{channel}
+								onUpdate={async () => {
+									await initChannels();
+								}}
+							/>
+						{/each}
+					</Folder>
+				{/if}
+
 				{#if $config?.features?.enable_channels && ($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))}
 					<Folder
 						id="sidebar-channels"
@@ -1277,13 +1318,14 @@
 									await tick();
 
 									setTimeout(() => {
+										createChannelType = '';
 										showCreateChannel = true;
 									}, 0);
 								}
 							: null}
 						onAddLabel={$i18n.t('Create Channel')}
 					>
-						{#each $channels as channel, channelIdx (`${channel?.id}`)}
+						{#each discussionChannels as channel, channelIdx (`${channel?.id}`)}
 							<ChannelItem
 								{channel}
 								onUpdate={async () => {
@@ -1291,7 +1333,7 @@
 								}}
 							/>
 
-							{#if channelIdx < $channels.length - 1 && channel.type !== $channels[channelIdx + 1]?.type}<hr
+							{#if channelIdx < discussionChannels.length - 1 && channel.type !== discussionChannels[channelIdx + 1]?.type}<hr
 									class=" border-gray-100/40 dark:border-gray-800/10 my-1.5 w-full"
 								/>
 							{/if}
