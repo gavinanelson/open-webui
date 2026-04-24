@@ -125,6 +125,19 @@
 		return 'Step';
 	};
 
+	const isNoiseBody = (value: string, entry: any) => {
+		if (!value) return true;
+		const trimmed = value.trim();
+		if (!trimmed) return true;
+		// Body text that just repeats the action/tool/event name adds no information.
+		const noise = new Set(
+			[entry?.action, entry?.tool, entry?.event]
+				.filter((x): x is string => typeof x === 'string' && x.length > 0)
+				.map((s) => s.toLowerCase().trim())
+		);
+		return noise.has(trimmed.toLowerCase());
+	};
+
 	const entryBody = (entry: any): string => {
 		const kind = entryKind(entry);
 		if (kind === 'reasoning') {
@@ -135,7 +148,7 @@
 		const url = entry?.url ?? entry?.target;
 		if (typeof url === 'string' && url.startsWith('http')) return url;
 		const value = entry?.description ?? entry?.text ?? entry?.summary ?? entry?.preview;
-		if (typeof value === 'string') return value;
+		if (typeof value === 'string' && !isNoiseBody(value, entry)) return value;
 		return '';
 	};
 
@@ -181,7 +194,7 @@
 </script>
 
 {#if history.length > 0 && status?.hidden !== true}
-	<div class="status-description w-full text-left text-sm">
+	<div class="status-description mb-3 w-full text-left text-sm">
 		<!-- Enclosing box -->
 		<div
 			class="overflow-hidden rounded-2xl border border-gray-200/80 bg-white/60 dark:border-white/[0.06] dark:bg-white/[0.02]"
@@ -189,12 +202,12 @@
 			<!-- Top cap: clickable, cycles modes -->
 			<button
 				type="button"
-				class="group flex w-full items-center gap-3 px-3.5 py-2 text-left transition hover:bg-gray-50 dark:hover:bg-white/[0.03]"
+				class="group flex w-full items-center gap-2.5 px-3 py-1.5 text-left transition hover:bg-gray-50 dark:hover:bg-white/[0.03]"
 				on:click={cycleViewMode}
 				aria-label="Cycle status detail level"
 			>
 				<!-- pulse dot -->
-				<div class="relative size-2 shrink-0">
+				<div class="relative size-[7px] shrink-0">
 					{#if active}
 						<span class="absolute inset-0 animate-ping rounded-full bg-sky-400 opacity-60"></span>
 					{/if}
@@ -206,7 +219,7 @@
 				</div>
 
 				<!-- meta -->
-				<div class="min-w-0 flex-1 truncate text-[13px]">
+				<div class="min-w-0 flex-1 truncate text-[12.5px]">
 					<span
 						class="font-medium {active
 							? 'shimmer text-gray-700 dark:text-gray-200'
@@ -224,10 +237,10 @@
 				</div>
 
 				<!-- mode hint + chevron -->
-				<div class="flex shrink-0 items-center gap-1 text-[11px] text-gray-400 dark:text-gray-500">
+				<div class="flex shrink-0 items-center gap-1 text-[10.5px] text-gray-400 dark:text-gray-500">
 					<span class="font-medium uppercase tracking-wide">{VIEW_LABELS[viewMode]}</span>
 					<div class="transition-transform duration-200 {expanded ? 'rotate-180' : ''}">
-						<ChevronDown className="size-3.5" strokeWidth="2.5" />
+						<ChevronDown className="size-3" strokeWidth="2.5" />
 					</div>
 				</div>
 			</button>
@@ -238,7 +251,7 @@
 					transition:slide={{ duration: 220, easing: quintOut, axis: 'y' }}
 					class="border-t border-gray-200/70 dark:border-white/[0.05]"
 				>
-					<ul class="px-3 py-2">
+					<ul class="px-2.5 py-1.5">
 						{#each history as entry, idx}
 							{@const kind = entryKind(entry)}
 							{@const title = entryTitle(entry)}
@@ -246,35 +259,35 @@
 							{@const entryDone = isDone(entry) || messageDone}
 							{@const isReasoning = kind === 'reasoning'}
 
-							<li class="flex items-start gap-3 py-1.5">
-								<!-- icon disc -->
+							<li class="flex items-start gap-2.5 py-0.5">
+								<!-- icon disc (bubbly: solid fill, no border) -->
 								<div
-									class="relative mt-0.5 flex size-[22px] shrink-0 items-center justify-center rounded-full border {kindColor(
+									class="relative mt-[3px] flex size-[18px] shrink-0 items-center justify-center rounded-full {kindColor(
 										kind
-									)} {!entryDone ? 'ring-2 ring-sky-300/40 dark:ring-sky-400/30' : ''}"
+									)} {!entryDone ? 'ring-2 ring-sky-300/50 dark:ring-sky-400/40' : ''}"
 								>
 									{#if isReasoning}
-										<Sparkles className="size-3" strokeWidth="2" />
+										<Sparkles className="size-[11px]" strokeWidth="2.2" />
 									{:else if kind === 'browser'}
-										<GlobeAlt className="size-3" strokeWidth="2" />
+										<GlobeAlt className="size-[11px]" strokeWidth="2.2" />
 									{:else if kind === 'search'}
-										<Search className="size-3" strokeWidth="2" />
+										<Search className="size-[11px]" strokeWidth="2.2" />
 									{:else if kind === 'snapshot'}
-										<Camera className="size-3" strokeWidth="2" />
+										<Camera className="size-[11px]" strokeWidth="2.2" />
 									{:else if kind === 'code'}
-										<Code className="size-3" strokeWidth="2" />
+										<Code className="size-[11px]" strokeWidth="2.2" />
 									{:else if kind === 'tool'}
-										<Wrench className="size-3" strokeWidth="2" />
+										<Wrench className="size-[11px]" strokeWidth="2.2" />
 									{:else}
 										<span class="size-1.5 rounded-full bg-current"></span>
 									{/if}
 								</div>
 
 								<!-- content -->
-								<div class="min-w-0 flex-1 pb-0.5">
-									<div class="flex items-baseline gap-2 text-[13px] leading-[22px]">
+								<div class="min-w-0 flex-1">
+									<div class="flex items-baseline gap-2 text-[12.5px] leading-[18px]">
 										<span
-											class="truncate font-medium {!entryDone
+											class="truncate {!entryDone
 												? 'shimmer'
 												: ''} text-gray-800 dark:text-gray-100"
 										>
@@ -285,13 +298,13 @@
 									{#if viewMode === 'trace' && body}
 										{#if isReasoning}
 											<div
-												class="mt-1 rounded-md border-l-2 border-amber-300 bg-amber-50/50 px-3 py-1.5 text-[13px] italic leading-6 text-gray-700 dark:border-amber-400/50 dark:bg-amber-500/[0.06] dark:text-gray-200"
+												class="mb-0.5 mt-1 rounded-lg border-l-2 border-amber-300 bg-amber-50/60 px-2.5 py-1 text-[12.5px] italic leading-[18px] text-gray-700 dark:border-amber-400/50 dark:bg-amber-500/[0.06] dark:text-gray-200"
 											>
 												<div class="whitespace-pre-wrap break-words">{body}</div>
 											</div>
 										{:else}
 											<div
-												class="mt-0.5 break-all font-mono text-[11.5px] leading-5 text-gray-500 dark:text-gray-500"
+												class="break-all font-mono text-[10.5px] leading-[15px] text-gray-500 dark:text-gray-500"
 											>
 												{body}
 											</div>
@@ -305,7 +318,7 @@
 			{:else}
 				<!-- Bottom cap in compact mode: latest status one-liner -->
 				<div
-					class="border-t border-gray-200/70 px-3.5 py-1.5 text-[12.5px] text-gray-500 dark:border-white/[0.05] dark:text-gray-400"
+					class="border-t border-gray-200/70 px-3 py-1 text-[12px] text-gray-500 dark:border-white/[0.05] dark:text-gray-400"
 				>
 					<div class="line-clamp-1">
 						<StatusItem {status} compact={true} done={!active} />
