@@ -18,6 +18,10 @@
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 
 	const dispatch = createEventDispatcher();
+	type HermesRuntimeOption = {
+		label: string;
+		value: string;
+	};
 
 	import {
 		type Model,
@@ -115,33 +119,51 @@
 
 	export let atSelectedModel: Model | undefined = undefined;
 	export let selectedModels: string[] = [''];
+	export let hermesRuntime = {
+		model: 'gpt-5.5',
+		modelLabel: 'GPT-5.5',
+		reasoning: 'medium',
+		reasoningLabel: 'Medium',
+		fast: 'off',
+		fastLabel: 'Normal'
+	};
 
 	let selectedModelIds = [];
 	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
-	let hermesRuntimeModel = 'GPT-5.5';
-	let hermesReasoning = 'Medium';
-	let hermesFastMode = 'Normal';
+	let hermesRuntimeModel = hermesRuntime.modelLabel;
+	let hermesReasoning = hermesRuntime.reasoningLabel;
+	let hermesFastMode = hermesRuntime.fastLabel;
 
-	const runHermesCommand = async (command: string) => {
-		prompt = command;
-		await tick();
-		dispatch('submit', command);
+	const selectHermesModel = async (model: HermesRuntimeOption) => {
+		hermesRuntime = {
+			...hermesRuntime,
+			model: model.value,
+			modelLabel: model.label
+		};
+		dispatch('hermes-runtime-change', hermesRuntime);
 	};
 
-	const selectHermesModel = async (model) => {
-		hermesRuntimeModel = model.label;
-		await runHermesCommand(`/model ${model.value}`);
+	const selectHermesReasoning = async (reasoning: HermesRuntimeOption) => {
+		hermesRuntime = {
+			...hermesRuntime,
+			reasoning: reasoning.value,
+			reasoningLabel: reasoning.label
+		};
+		dispatch('hermes-runtime-change', hermesRuntime);
 	};
 
-	const selectHermesReasoning = async (reasoning) => {
-		hermesReasoning = reasoning.label;
-		await runHermesCommand(`/reasoning ${reasoning.value}`);
+	const selectHermesFastMode = async (mode: HermesRuntimeOption) => {
+		hermesRuntime = {
+			...hermesRuntime,
+			fast: mode.value,
+			fastLabel: mode.label
+		};
+		dispatch('hermes-runtime-change', hermesRuntime);
 	};
 
-	const selectHermesFastMode = async (mode) => {
-		hermesFastMode = mode.label;
-		await runHermesCommand(`/fast ${mode.value}`);
-	};
+	$: hermesRuntimeModel = hermesRuntime.modelLabel;
+	$: hermesReasoning = hermesRuntime.reasoningLabel;
+	$: hermesFastMode = hermesRuntime.fastLabel;
 
 	const compactSelectorClass =
 		'flex max-w-[13rem] items-center gap-1 truncate rounded-lg px-2 py-1 text-xs font-medium text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800';

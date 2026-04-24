@@ -1657,14 +1657,25 @@ async def run_native_hermes_chat(request: Request, form_data: dict, metadata: di
     content = ''
     usage = None
     run_id = None
+    hermes_runtime = metadata.get('hermes_runtime') if isinstance(metadata.get('hermes_runtime'), dict) else {}
+    hermes_run_payload = {
+        'input': user_input,
+        'conversation_history': conversation_history,
+        'session_id': metadata.get('chat_id') or metadata.get('session_id'),
+    }
+    if hermes_runtime:
+        # Structured runtime settings from the native Hermes composer controls.
+        # These are intentionally not sent as slash-command chat text.
+        if hermes_runtime.get('model'):
+            hermes_run_payload['model'] = hermes_runtime.get('model')
+        if hermes_runtime.get('reasoning'):
+            hermes_run_payload['reasoning'] = hermes_runtime.get('reasoning')
+        if hermes_runtime.get('fast'):
+            hermes_run_payload['fast'] = hermes_runtime.get('fast')
 
     async with session.post(
         f'{base_url}/runs',
-        json={
-            'input': user_input,
-            'conversation_history': conversation_history,
-            'session_id': metadata.get('chat_id') or metadata.get('session_id'),
-        },
+        json=hermes_run_payload,
         headers=headers,
         ssl=AIOHTTP_CLIENT_SESSION_SSL,
         timeout=aiohttp.ClientTimeout(total=30),
@@ -1851,6 +1862,7 @@ async def chat_completion(
             'tool_servers': form_data.pop('tool_servers', None),
             'files': form_data.get('files', None),
             'features': form_data.get('features', {}),
+            'hermes_runtime': form_data.pop('hermes_runtime', None),
             'variables': form_data.get('variables', {}),
             'model': model,
             'direct': model_item.get('direct', False),

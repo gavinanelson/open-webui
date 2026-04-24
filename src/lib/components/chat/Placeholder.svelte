@@ -39,6 +39,14 @@
 
 	export let atSelectedModel: Model | undefined;
 	export let selectedModels: string[] = [''];
+	export let hermesRuntime = {
+		model: 'gpt-5.5',
+		modelLabel: 'GPT-5.5',
+		reasoning: 'medium',
+		reasoningLabel: 'Medium',
+		fast: 'off',
+		fastLabel: 'Normal'
+	};
 
 	export let history;
 
@@ -213,6 +221,7 @@
 					bind:this={messageInput}
 					{history}
 					bind:selectedModels
+					bind:hermesRuntime
 					bind:files
 					bind:prompt
 					bind:autoScroll

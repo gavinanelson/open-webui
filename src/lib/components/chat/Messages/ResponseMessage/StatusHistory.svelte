@@ -122,99 +122,90 @@
 
 {#if history && history.length > 0 && status?.hidden !== true}
 	<div class="status-description w-full text-left text-sm">
-		<div class="border-l border-gray-200 pl-3 dark:border-gray-800">
-			<button
-				class="group flex w-full items-start justify-between gap-3 border border-gray-100 bg-gray-50/70 px-3 py-2.5 text-left transition hover:bg-gray-100 dark:border-gray-800 dark:bg-gray-900/40 dark:hover:bg-gray-850"
-				aria-label="Cycle status detail level"
-				on:click={cycleViewMode}
-			>
-				<div class="min-w-0 flex-1">
-					<div class="mb-1 flex items-center gap-2 text-[11px] uppercase text-gray-500 dark:text-gray-500">
-						<span class="size-1.5 rounded-full {active ? 'animate-pulse bg-emerald-500' : 'bg-gray-400 dark:bg-gray-600'}"></span>
-						<span>{active ? 'Working' : 'Done'}</span>
-						<span>{elapsed}</span>
-					</div>
-					<StatusItem {status} compact={true} done={!active} />
-				</div>
-				<div class="flex shrink-0 items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+		<button
+			class="group flex w-full items-start gap-3 rounded-2xl bg-gray-50/80 px-3.5 py-3 text-left transition hover:bg-gray-100/90 dark:bg-white/[0.035] dark:hover:bg-white/[0.055]"
+			aria-label="Cycle status detail level"
+			on:click={cycleViewMode}
+		>
+			<span
+				class="mt-1.5 size-2 shrink-0 rounded-full {active
+					? 'animate-pulse bg-sky-400'
+					: 'bg-gray-400 dark:bg-gray-600'}"
+			></span>
+			<div class="min-w-0 flex-1">
+				<div class="mb-1 flex min-w-0 items-center gap-2 text-[11px] font-medium uppercase text-gray-500 dark:text-gray-500">
+					<span>{active ? 'Working' : 'Done'}</span>
+					<span class="text-gray-300 dark:text-gray-700">/</span>
 					<span>{VIEW_LABELS[viewMode]}</span>
 				</div>
-			</button>
+				<StatusItem {status} compact={true} done={!active} />
+			</div>
+		</button>
 
-			{#if viewMode !== 'compact'}
-				<div class="mt-2">
-					<div class="mb-2 flex flex-wrap items-center gap-2 text-[11px] text-gray-500 dark:text-gray-500">
-						<span>{history.length} updates</span>
-						<span>{stageCount} stages</span>
-						<span>{hasReasoning ? 'Reasoning available' : 'No reasoning text'}</span>
-						<button
-							class="ml-auto border border-gray-200 px-2 py-0.5 text-[11px] text-gray-600 transition hover:bg-gray-50 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-900"
-							on:click={() => setLayoutMode(layoutMode === 'scroll' ? 'expanded' : 'scroll')}
-						>
-							{layoutMode === 'scroll' ? 'Expand' : 'Scroll'}
-						</button>
-					</div>
-
-					<div
-						class="space-y-2 pr-1 {layoutMode === 'scroll'
-							? viewMode === 'detailed'
-								? 'max-h-[34rem] overflow-y-auto'
-								: 'max-h-52 overflow-y-auto'
-							: ''}"
+		{#if viewMode !== 'compact'}
+			<div class="mt-2">
+				<div class="mb-2 flex flex-wrap items-center gap-2 px-1 text-[11px] text-gray-500 dark:text-gray-500">
+					<span>{history.length} updates</span>
+					<span>{stageCount} stages</span>
+					<span>{hasReasoning ? 'Reasoning available' : 'No reasoning text'}</span>
+					<span class="ml-auto">{active ? `Working ${elapsed}` : `Done after ${elapsed}`}</span>
+					<button
+						class="rounded-md px-2 py-0.5 text-[11px] text-gray-600 transition hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/[0.06]"
+						on:click={() => setLayoutMode(layoutMode === 'scroll' ? 'expanded' : 'scroll')}
 					>
-						{#each panelHistory as entry, entryIndex}
-							<div class="grid grid-cols-[14px_minmax(0,1fr)] gap-2">
-								<div class="relative pt-2">
-									<div
-										class="size-1.5 rounded-full {isReasoning(entry)
-											? 'bg-sky-500'
-											: isTool(entry)
-												? 'bg-amber-500'
-												: isDone(entry) || messageDone
-													? 'bg-gray-400 dark:bg-gray-600'
-													: 'bg-emerald-500'}"
-									></div>
-									{#if entryIndex < panelHistory.length - 1}
-										<div class="absolute left-[3px] top-5 h-[calc(100%+4px)] w-px bg-gray-200 dark:bg-gray-800"></div>
-									{/if}
-								</div>
-
-								<div
-									class="{viewMode === 'detailed'
-										? 'border-b border-gray-100 pb-2 dark:border-gray-850'
-										: ''} min-w-0"
-								>
-									{#if viewMode === 'detailed'}
-										<div class="mb-1 text-[11px] font-medium uppercase text-gray-500 dark:text-gray-500">
-											{entryTitle(entry)}
-										</div>
-										<div
-											class="whitespace-pre-wrap break-words text-[13px] leading-6 {isReasoning(entry)
-												? 'text-gray-800 dark:text-gray-200'
-													: 'text-gray-600 dark:text-gray-300'}"
-										>
-											{entryText(entry)}
-										</div>
-									{:else}
-										<StatusItem status={entry} done={messageDone || isDone(entry)} compact={false} />
-									{/if}
-								</div>
-							</div>
-						{/each}
-
-						{#if !active}
-							<div class="grid grid-cols-[14px_minmax(0,1fr)] gap-2">
-								<div class="pt-1.5">
-									<div class="size-1.5 rounded-full bg-gray-300 dark:bg-gray-700"></div>
-								</div>
-								<div class="text-xs font-medium text-gray-500 dark:text-gray-500">
-									Done after {elapsed}
-								</div>
-							</div>
-						{/if}
-					</div>
+						{layoutMode === 'scroll' ? 'Expand' : 'Scroll'}
+					</button>
 				</div>
-			{/if}
-		</div>
+
+				<div
+					class="space-y-1.5 pr-1 {layoutMode === 'scroll'
+						? viewMode === 'detailed'
+							? 'max-h-[34rem] overflow-y-auto'
+							: 'max-h-52 overflow-y-auto'
+						: ''}"
+				>
+					{#each panelHistory as entry}
+						<div
+							class="grid grid-cols-[16px_minmax(0,1fr)] gap-2 rounded-xl px-1.5 py-1.5 {isReasoning(entry) && viewMode === 'detailed'
+								? 'bg-sky-50/70 dark:bg-sky-500/[0.06]'
+								: 'bg-transparent'}"
+						>
+							<div class="pt-2">
+								<div
+									class="size-1.5 rounded-full {isReasoning(entry)
+										? 'bg-sky-400'
+										: isTool(entry)
+											? 'bg-amber-400'
+											: isDone(entry) || messageDone
+												? 'bg-gray-400 dark:bg-gray-600'
+												: 'bg-emerald-400'}"
+								></div>
+							</div>
+
+							<div class="min-w-0">
+								{#if viewMode === 'detailed'}
+									<div class="mb-1 text-[11px] font-medium uppercase text-gray-500 dark:text-gray-500">
+										{entryTitle(entry)}
+									</div>
+									<div
+										class="whitespace-pre-wrap break-words text-[13px] leading-6 {isReasoning(entry)
+											? 'text-gray-800 dark:text-gray-100'
+											: 'text-gray-600 dark:text-gray-300'}"
+									>
+										{entryText(entry)}
+									</div>
+								{:else}
+									<StatusItem status={entry} done={messageDone || isDone(entry)} compact={false} />
+								{/if}
+							</div>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{:else}
+			<div class="mt-1 px-1 text-[11px] text-gray-500 dark:text-gray-500">
+				{active ? elapsed : `Done after ${elapsed}`}
+			</div>
+		{/if}
 	</div>
 {/if}

@@ -138,6 +138,14 @@
 	let selectedModels = [''];
 	let atSelectedModel: Model | undefined;
 	let selectedModelIds = [];
+	let hermesRuntime = {
+		model: 'gpt-5.5',
+		modelLabel: 'GPT-5.5',
+		reasoning: 'medium',
+		reasoningLabel: 'Medium',
+		fast: 'off',
+		fastLabel: 'Normal'
+	};
 	$: if (atSelectedModel !== undefined) {
 		selectedModelIds = [atSelectedModel.id];
 	} else {
@@ -2372,6 +2380,7 @@
 						$user?.email
 					)
 				},
+				hermes_runtime: hermesRuntime,
 				model_item: $models.find((m) => m.id === model.id),
 
 				session_id: $socket?.id,
@@ -2975,6 +2984,7 @@
 									{history}
 									{taskIds}
 									bind:selectedModels
+									bind:hermesRuntime
 									bind:files
 									bind:prompt
 									bind:autoScroll
@@ -3055,6 +3065,7 @@
 								<Placeholder
 									{history}
 									bind:selectedModels
+									bind:hermesRuntime
 									bind:messageInput
 									bind:files
 									bind:prompt
