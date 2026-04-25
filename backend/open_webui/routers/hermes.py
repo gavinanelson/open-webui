@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -155,6 +156,24 @@ def _api_base_url(request: Request) -> str:
     return os.getenv('HERMES_API_BASE_URL', 'http://127.0.0.1:8642').rstrip('/').removesuffix('/v1')
 
 
+def _api_auth_headers(request: Request) -> dict[str, str]:
+    urls = getattr(request.app.state.config, 'OPENAI_API_BASE_URLS', []) or []
+    keys = getattr(request.app.state.config, 'OPENAI_API_KEYS', []) or []
+    for idx, url in enumerate(urls):
+        if url and ('8642' in url or '8652' in url or 'hermes' in url.lower()):
+            key = keys[idx] if idx < len(keys) else ''
+            if key:
+                return {'Authorization': f'Bearer {key}'}
+
+    fallback = os.getenv('HERMES_API_KEY') or os.getenv('OPENAI_API_KEY') or ''
+    return {'Authorization': f'Bearer {fallback}'} if fallback else {}
+
+
+def _dashboard_headers(dashboard_base: str) -> dict[str, str]:
+    host = urlparse(dashboard_base).hostname or ''
+    return {'Host': 'localhost'} if host == 'host.docker.internal' else {}
+
+
 async def _fetch_json(url: str, headers: dict[str, str] | None = None, timeout: float = 4.0) -> dict[str, Any] | list[Any]:
     session = await get_session()
     async with session.get(
@@ -193,6 +212,54 @@ def _dedupe_options(options: list[dict[str, str]]) -> list[dict[str, str]]:
     return result
 
 
+def _reasoning_option_values_for_model(model_id: str, supports_reasoning: bool | None = None) -> list[str]:
+    model = str(model_id or '').strip().lower()
+    model = re.sub(r'^[a-z0-9_.-]+/', '', model)
+
+    if not model:
+        return ['']
+
+    # OpenAI publishes model-specific reasoning effort sets. Keep this scoped so
+    # the harness does not offer invalid efforts for older or non-reasoning models.
+    if re.search(r'\bgpt-5\.(?:4|5)(?:[-\w.]*)?$', model):
+        return ['', 'none', 'low', 'medium', 'high', 'xhigh']
+    if re.search(r'\bgpt-5\.[23](?:[-\w.]*)?$', model):
+        return ['', 'low', 'medium', 'high', 'xhigh']
+    if re.search(r'\bgpt-5\.1(?:[-\w.]*)?$', model):
+        return ['', 'none', 'low', 'medium', 'high']
+    if re.search(r'\bgpt-5(?:-(?:mini|nano|codex|pro).*)?$', model):
+        return ['', 'minimal', 'low', 'medium', 'high']
+    if re.search(r'\bo[134](?:-|$)|\bo3(?:-|$)|\bo4(?:-|$)', model):
+        return ['', 'low', 'medium', 'high']
+
+    if supports_reasoning is True:
+        return ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh']
+
+    return ['']
+
+
+def _reasoning_options_for_model(model: dict[str, str], global_options: list[dict[str, str]]) -> list[dict[str, str]]:
+    supported = model.get('supports_reasoning')
+    supports_reasoning = None if supported is None else str(supported).lower() in {'1', 'true', 'yes'}
+    values = _reasoning_option_values_for_model(model.get('value') or '', supports_reasoning)
+    by_value = {str(option.get('value') or ''): option for option in global_options}
+
+    return _dedupe_options(
+        [
+            {
+                'value': value,
+                'label': by_value.get(value, {}).get('label') or _label_from_value(value),
+                **(
+                    {'description': by_value[value]['description']}
+                    if value in by_value and by_value[value].get('description')
+                    else {}
+                ),
+            }
+            for value in values
+        ]
+    )
+
+
 def _hermes_catalog_model_options(catalog: dict[str, Any]) -> list[dict[str, str]]:
     models = catalog.get('models') if isinstance(catalog, dict) else None
     if not isinstance(models, list):
@@ -205,10 +272,12 @@ def _hermes_catalog_model_options(catalog: dict[str, Any]) -> list[dict[str, str
             value = str(model.get('id') or model.get('value') or '').strip()
             label = str(model.get('label') or value).strip()
             source = str(model.get('source') or '').strip()
+            supports_reasoning = model.get('supports_reasoning')
         else:
             value = str(model or '').strip()
             label = value
             source = ''
+            supports_reasoning = None
         if not value:
             continue
         result.append(
@@ -216,6 +285,7 @@ def _hermes_catalog_model_options(catalog: dict[str, Any]) -> list[dict[str, str
                 'value': value,
                 'label': label or value,
                 'description': source or (f'{provider} model' if provider else 'Hermes model'),
+                **({'supports_reasoning': str(bool(supports_reasoning)).lower()} if supports_reasoning is not None else {}),
             }
         )
     return result
@@ -260,6 +330,7 @@ def _config_value(config: dict[str, Any], key: str) -> str:
 async def get_hermes_overview(request: Request, user=Depends(get_verified_user)):
     api_base = _api_base_url(request)
     dashboard_base = _dashboard_base_url(request)
+    dashboard_headers = _dashboard_headers(dashboard_base)
 
     async def safe(name: str, coro):
         try:
@@ -270,10 +341,10 @@ async def get_hermes_overview(request: Request, user=Depends(get_verified_user))
     results = dict(
         await asyncio.gather(
             safe('health', _fetch_json(f'{api_base}/health')),
-            safe('models', _fetch_json(f'{api_base}/v1/models')),
-            safe('dashboard_status', _fetch_json(f'{dashboard_base}/api/status')),
-            safe('model_info', _fetch_json(f'{dashboard_base}/api/model/info')),
-            safe('sessions', _fetch_json(f'{dashboard_base}/api/sessions?limit=20')),
+            safe('models', _fetch_json(f'{api_base}/v1/models', headers=_api_auth_headers(request))),
+            safe('dashboard_status', _fetch_json(f'{dashboard_base}/api/status', headers=dashboard_headers)),
+            safe('model_info', _fetch_json(f'{dashboard_base}/api/model/info', headers=dashboard_headers)),
+            safe('sessions', _fetch_json(f'{dashboard_base}/api/sessions?limit=20', headers=dashboard_headers)),
         )
     )
 
@@ -294,6 +365,7 @@ async def get_hermes_commands(user=Depends(get_verified_user)):
 async def get_hermes_runtime_options(request: Request, user=Depends(get_verified_user)):
     api_base = _api_base_url(request)
     dashboard_base = _dashboard_base_url(request)
+    dashboard_headers = _dashboard_headers(dashboard_base)
 
     async def safe(coro, default):
         try:
@@ -301,12 +373,13 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
         except Exception:
             return default
 
+    api_headers = _api_auth_headers(request)
     models_payload, catalog, model_info, config, schema = await asyncio.gather(
-        safe(_fetch_json(f'{api_base}/v1/models'), {}),
-        safe(_fetch_json(f'{dashboard_base}/api/models/available'), {}),
-        safe(_fetch_json(f'{dashboard_base}/api/model/info'), {}),
-        safe(_fetch_json(f'{dashboard_base}/api/config'), {}),
-        safe(_fetch_json(f'{dashboard_base}/api/config/schema'), {}),
+        safe(_fetch_json(f'{api_base}/v1/models', headers=api_headers), {}),
+        safe(_fetch_json(f'{dashboard_base}/api/models/available', headers=dashboard_headers), {}),
+        safe(_fetch_json(f'{dashboard_base}/api/model/info', headers=dashboard_headers), {}),
+        safe(_fetch_json(f'{dashboard_base}/api/config', headers=dashboard_headers), {}),
+        safe(_fetch_json(f'{dashboard_base}/api/config/schema', headers=dashboard_headers), {}),
     )
 
     model_options = _hermes_catalog_model_options(catalog) or _compat_model_options(models_payload)
@@ -331,15 +404,27 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
             {'value': 'fast', 'label': 'Fast'},
         ]
 
+    model_options = _dedupe_options(model_options)
+    reasoning_options = _dedupe_options(reasoning_options)
+    fast_options = _dedupe_options(fast_options)
+    reasoning_options_by_model = {
+        model['value']: _reasoning_options_for_model(model, reasoning_options)
+        for model in model_options
+        if model.get('value')
+    }
+
     current_reasoning = _config_value(config, 'agent.reasoning_effort') if isinstance(config, dict) else ''
     current_fast = _config_value(config, 'agent.service_tier') if isinstance(config, dict) else ''
     current_fast = 'fast' if current_fast in {'fast', 'priority', 'on'} else 'normal'
 
     current = {
         'model': configured_model or (model_options[0]['value'] if model_options else ''),
-        'reasoning': current_reasoning or (reasoning_options[0]['value'] if reasoning_options else ''),
+        'reasoning': current_reasoning or (reasoning_options_by_model.get(configured_model or '', reasoning_options)[0]['value'] if (reasoning_options_by_model.get(configured_model or '', reasoning_options)) else ''),
         'fast': current_fast or (fast_options[0]['value'] if fast_options else ''),
     }
+    current_model_reasoning = reasoning_options_by_model.get(current['model']) or reasoning_options
+    if current_model_reasoning and current['reasoning'] not in {option['value'] for option in current_model_reasoning}:
+        current['reasoning'] = current_model_reasoning[0]['value']
 
     config_options = [
         {
@@ -350,7 +435,7 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
             'currentValue': current['model'],
             'options': [
                 {'value': option['value'], 'name': option['label'], 'description': option.get('description', '')}
-                for option in _dedupe_options(model_options)
+                for option in model_options
             ],
         },
         {
@@ -361,7 +446,7 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
             'currentValue': current['reasoning'],
             'options': [
                 {'value': option['value'], 'name': option['label'], 'description': option.get('description', '')}
-                for option in _dedupe_options(reasoning_options)
+                for option in current_model_reasoning
             ],
         },
         {
@@ -372,16 +457,17 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
             'currentValue': current['fast'],
             'options': [
                 {'value': option['value'], 'name': option['label'], 'description': option.get('description', '')}
-                for option in _dedupe_options(fast_options)
+                for option in fast_options
             ],
         },
     ]
 
     return {
         'current': current,
-        'model_options': _dedupe_options(model_options),
-        'reasoning_options': _dedupe_options(reasoning_options),
-        'fast_options': _dedupe_options(fast_options),
+        'model_options': model_options,
+        'reasoning_options': current_model_reasoning,
+        'reasoning_options_by_model': reasoning_options_by_model,
+        'fast_options': fast_options,
         'config_options': config_options,
         'sources': {
             'models': f'{dashboard_base}/api/models/available',

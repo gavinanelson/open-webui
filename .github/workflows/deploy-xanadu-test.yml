@@ -123,6 +123,18 @@ jobs:
             echo
             echo
           done
+          curl -k -sS https://chat-test.yxanadu.com/api/version -o /tmp/openwebui-test-version
+          python3 - <<'PY' "${{ github.sha }}"
+          import json
+          import sys
+          from pathlib import Path
+
+          expected = sys.argv[1]
+          payload = json.loads(Path('/tmp/openwebui-test-version').read_text())
+          actual = payload.get('deployment_id') or payload.get('build_hash')
+          if actual != expected:
+              raise SystemExit(f'test deployment is not at expected SHA: expected={expected} actual={actual}')
+          PY
 
       - name: Verify production stayed up during test deploy
         run: |

@@ -21,6 +21,7 @@
 	type HermesRuntimeOption = {
 		label: string;
 		value: string;
+		description?: string;
 	};
 	type HermesCommand = {
 		name: string;
@@ -159,11 +160,26 @@
 	let hermesFastMode = hermesRuntime.fastLabel;
 	let hermesRuntimeOptionsLoaded = false;
 
+	const reasoningOptionsForModel = (modelValue: string) =>
+		HERMES_REASONING_LEVELS_BY_MODEL[modelValue] ?? HERMES_REASONING_LEVELS;
+
 	const selectHermesModel = async (model: HermesRuntimeOption) => {
+		const reasoningOptions = reasoningOptionsForModel(model.value);
+		const currentReasoning = reasoningOptions.find(
+			(option) => option.value === hermesRuntime.reasoning
+		);
+		const nextReasoning = currentReasoning ?? reasoningOptions[0];
+
 		hermesRuntime = {
 			...hermesRuntime,
 			model: model.value,
-			modelLabel: model.label
+			modelLabel: model.label,
+			...(nextReasoning
+				? {
+						reasoning: nextReasoning.value,
+						reasoningLabel: nextReasoning.label
+					}
+				: {})
 		};
 		dispatch('hermes-runtime-change', hermesRuntime);
 	};
@@ -190,13 +206,21 @@
 	$: hermesReasoning = hermesRuntime.reasoningLabel;
 	$: hermesFastMode = hermesRuntime.fastLabel;
 
-	const normalizeHermesOptions = (options: any[] = []) =>
+	const normalizeHermesOptions = (options: any[] = [], allowEmptyValue = false) =>
 		options
 			.map((option) => ({
 				value: String(option?.value ?? '').trim(),
-				label: String(option?.label ?? option?.name ?? option?.value ?? '').trim()
+				label: String(option?.label ?? option?.name ?? option?.value ?? '').trim(),
+				description: String(option?.description ?? '').trim()
 			}))
-			.filter((option) => option.value && option.label);
+			.filter((option) => (allowEmptyValue || option.value) && option.label);
+
+	const normalizeReasoningOptionsByModel = (optionsByModel: Record<string, any[]> = {}) =>
+		Object.fromEntries(
+			Object.entries(optionsByModel)
+				.map(([model, options]) => [model, normalizeHermesOptions(options, true)])
+				.filter(([_model, options]) => options.length > 0)
+		);
 
 	const loadHermesRuntimeOptions = async () => {
 		if (!localStorage.token) {
@@ -212,12 +236,16 @@
 		}
 
 		HERMES_RUNTIME_MODELS = normalizeHermesOptions(runtimeOptions.model_options);
-		HERMES_REASONING_LEVELS = normalizeHermesOptions(runtimeOptions.reasoning_options);
+		HERMES_REASONING_LEVELS = normalizeHermesOptions(runtimeOptions.reasoning_options, true);
+		HERMES_REASONING_LEVELS_BY_MODEL = normalizeReasoningOptionsByModel(
+			runtimeOptions.reasoning_options_by_model
+		);
 		HERMES_FAST_MODES = normalizeHermesOptions(runtimeOptions.fast_options);
 
 		const current = runtimeOptions.current ?? {};
 		const currentModel = HERMES_RUNTIME_MODELS.find((option) => option.value === current.model);
-		const currentReasoning = HERMES_REASONING_LEVELS.find(
+		const currentReasoningOptions = reasoningOptionsForModel(currentModel?.value ?? current.model);
+		const currentReasoning = currentReasoningOptions.find(
 			(option) => option.value === current.reasoning
 		);
 		const currentFast = HERMES_FAST_MODES.find((option) => option.value === current.fast);
@@ -239,11 +267,13 @@
 
 	let HERMES_RUNTIME_MODELS: HermesRuntimeOption[] = [];
 	let HERMES_REASONING_LEVELS: HermesRuntimeOption[] = [];
+	let HERMES_REASONING_LEVELS_BY_MODEL: Record<string, HermesRuntimeOption[]> = {};
 	let HERMES_FAST_MODES: HermesRuntimeOption[] = [];
 	let hermesModelSearch = '';
 	$: filteredHermesRuntimeModels = HERMES_RUNTIME_MODELS.filter((model) =>
 		`${model.label} ${model.value}`.toLowerCase().includes(hermesModelSearch.trim().toLowerCase())
 	);
+	$: filteredHermesReasoningLevels = reasoningOptionsForModel(hermesRuntime.model);
 
 	let HERMES_COMMAND_GROUPS: { label: string; commands: HermesComposerCommand[] }[] = [
 		{
@@ -473,7 +503,7 @@
 				return true;
 			}
 
-			const reasoning = findHermesRuntimeOption(HERMES_REASONING_LEVELS, value);
+			const reasoning = findHermesRuntimeOption(filteredHermesReasoningLevels, value);
 			if (!reasoning) {
 				toast.error(
 					value ? `Unknown reasoning level: ${value}` : 'Choose a reasoning level first.'
@@ -2121,7 +2151,7 @@
 															Reasoning
 														</div>
 														<div class="space-y-0.5">
-															{#each HERMES_REASONING_LEVELS as reasoning}
+															{#each filteredHermesReasoningLevels as reasoning}
 																<button
 																	type="button"
 																	class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"

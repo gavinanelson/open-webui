@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import urllib.request
 from pathlib import Path
 
 
@@ -157,6 +158,19 @@ def patch_web_server(path: Path) -> bool:
         '    "/api/model/info",\n})',
         '    "/api/model/info",\n    "/api/models/available",\n})',
     )
+    if '"/api/models/available"' not in text.split("_PUBLIC_API_PATHS", 1)[-1].split("})", 1)[0]:
+        text = re.sub(
+            r'(_PUBLIC_API_PATHS:.*?frozenset\(\{.*?)(\n\}\))',
+            r'\1\n    "/api/models/available",\2',
+            text,
+            count=1,
+            flags=re.DOTALL,
+        )
+    text = text.replace(
+        '{"id": model, "label": model, "source": source or provider or "hermes"}',
+        '{"id": model, "label": model, "source": source or provider or "hermes", '
+        '"supports_reasoning": any(token in model.lower() for token in ("gpt-5", "o1", "o3", "o4", "claude-3-7", "claude-4"))}',
+    )
     if '@app.get("/api/models/available")' not in text:
         marker = (
             "    except Exception:\n"
@@ -251,6 +265,15 @@ def restart_hermes_if_possible() -> None:
             print(result.stdout.strip())
 
 
+def dashboard_catalog_public() -> bool:
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:9119/api/models/available", timeout=4) as response:
+            return response.status == 200
+    except Exception as exc:
+        print(f"Hermes dashboard model catalog check failed: {exc}")
+        return False
+
+
 def main() -> int:
     roots = candidate_roots()
     if not roots:
@@ -267,7 +290,7 @@ def main() -> int:
         web = root / "hermes_cli/web_server.py"
         run(["python3", "-m", "py_compile", str(api), str(web)], check=False)
 
-    if changed:
+    if changed or not dashboard_catalog_public():
         restart_hermes_if_possible()
     return 0
 

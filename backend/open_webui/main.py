@@ -2598,6 +2598,7 @@ async def get_app_version():
     return {
         'version': VERSION,
         'deployment_id': DEPLOYMENT_ID,
+        'build_hash': WEBUI_BUILD_HASH,
     }
 
 

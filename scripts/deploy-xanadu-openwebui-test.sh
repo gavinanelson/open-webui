@@ -126,6 +126,9 @@ services:
       OPENAI_API_KEYS: \${OPENAI_API_KEY};\${OPENAI_API_KEY}
       HERMES_API_BASE_URL: http://host.docker.internal:8642
       HERMES_DASHBOARD_BASE_URL: http://host.docker.internal:9119
+      DEPLOYMENT_ID: ${FULL_SHA}
+      WEBUI_BUILD_HASH: ${FULL_SHA}
+      WEBUI_BUILD_VERSION: ${FULL_SHA}
       ENABLE_CHANNELS: "true"
       ENABLE_OLLAMA_API: "false"
       WEBUI_URL: ${PUBLIC_URL}

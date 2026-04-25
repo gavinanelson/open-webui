@@ -156,7 +156,13 @@
 			model?.id,
 			model?.name,
 			model?.owned_by,
+			model?.source,
+			model?.info?.id,
+			model?.info?.name,
+			model?.info?.base_model_id,
 			model?.info?.meta?.description,
+			model?.info?.meta?.profile_image_url,
+			JSON.stringify(model?.info?.meta?.capabilities ?? {}),
 			...(model?.tags ?? []).map((tag) => tag?.name)
 		]
 			.filter(Boolean)
@@ -166,6 +172,7 @@
 		return (
 			haystack.startsWith('hermes') ||
 			haystack.includes('hermes-agent') ||
+			haystack.includes('hermetz') ||
 			haystack.includes('hermes')
 		);
 	};
