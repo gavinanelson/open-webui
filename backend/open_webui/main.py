@@ -1709,7 +1709,7 @@ async def run_native_hermes_chat(request: Request, form_data: dict, metadata: di
         hermes_run_payload.update(hermes_runtime)
 
     async with session.post(
-        f'{base_url}/runs',
+        f'{base_url}/v1/runs',
         json=hermes_run_payload,
         headers=headers,
         ssl=AIOHTTP_CLIENT_SESSION_SSL,
@@ -1728,7 +1728,7 @@ async def run_native_hermes_chat(request: Request, form_data: dict, metadata: di
             raise Exception('Hermes run did not return a run_id')
 
     async with session.get(
-        f'{base_url}/runs/{run_id}/events',
+        f'{base_url}/v1/runs/{run_id}/events',
         headers=headers,
         ssl=AIOHTTP_CLIENT_SESSION_SSL,
         timeout=aiohttp.ClientTimeout(total=None),
