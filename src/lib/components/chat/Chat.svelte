@@ -91,6 +91,7 @@
 	} from '$lib/apis';
 	import { getTools } from '$lib/apis/tools';
 	import { uploadFile } from '$lib/apis/files';
+	import { getHermesRuntimeOptions } from '$lib/apis/hermes';
 	import { createOpenAITextStream } from '$lib/apis/streaming';
 	import { getFunctions } from '$lib/apis/functions';
 	import { updateFolderById } from '$lib/apis/folders';
@@ -146,41 +147,30 @@
 		fast: '',
 		fastLabel: 'Mode'
 	};
+	let hermesProfileIds: string[] = [];
 	$: if (atSelectedModel !== undefined) {
 		selectedModelIds = [atSelectedModel.id];
 	} else {
 		selectedModelIds = selectedModels;
 	}
-	const isHermesModel = (model: any) => {
-		const haystack = [
-			model?.id,
-			model?.name,
-			model?.owned_by,
-			model?.source,
-			model?.info?.id,
-			model?.info?.name,
-			model?.info?.base_model_id,
-			model?.info?.meta?.description,
-			model?.info?.meta?.profile_image_url,
-			JSON.stringify(model?.info?.meta?.capabilities ?? {}),
-			...(model?.tags ?? []).map((tag) => tag?.name)
-		]
-			.filter(Boolean)
-			.join(' ')
-			.toLowerCase();
+	const loadHermesProfiles = async () => {
+		if (!localStorage.token) {
+			return;
+		}
 
-		return (
-			haystack.startsWith('hermes') ||
-			haystack.includes('hermes-agent') ||
-			haystack.includes('hermetz') ||
-			haystack.includes('hermes')
-		);
+		const runtimeOptions = await getHermesRuntimeOptions(localStorage.token).catch((error) => {
+			console.error(error);
+			return null;
+		});
+
+		hermesProfileIds = (runtimeOptions?.profile_ids ?? [])
+			.map((id) => String(id ?? '').trim())
+			.filter(Boolean);
 	};
-	$: hermesSelectedModels = selectedModelIds
-		.map((id) => $models.find((model) => model.id === id))
-		.filter(Boolean);
 	$: isHermesRuntimeSelected =
-		hermesSelectedModels.length > 0 && hermesSelectedModels.every(isHermesModel);
+		selectedModelIds.length > 0 &&
+		hermesProfileIds.length > 0 &&
+		selectedModelIds.every((id) => hermesProfileIds.includes(id));
 
 	let selectedToolIds = [];
 	let selectedFilterIds = [];
@@ -799,6 +789,7 @@
 	onMount(() => {
 		loading = true;
 		console.log('mounted');
+		loadHermesProfiles();
 		window.addEventListener('message', onMessageHandler);
 		$socket?.on('events', chatEventHandler);
 

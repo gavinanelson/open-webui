@@ -156,17 +156,29 @@ def _api_base_url(request: Request) -> str:
     return os.getenv('HERMES_API_BASE_URL', 'http://127.0.0.1:8642').rstrip('/').removesuffix('/v1')
 
 
-def _api_auth_headers(request: Request) -> dict[str, str]:
+def _api_targets(request: Request) -> list[tuple[str, dict[str, str]]]:
+    targets = []
     urls = getattr(request.app.state.config, 'OPENAI_API_BASE_URLS', []) or []
     keys = getattr(request.app.state.config, 'OPENAI_API_KEYS', []) or []
     for idx, url in enumerate(urls):
         if url and ('8642' in url or '8652' in url or 'hermes' in url.lower()):
             key = keys[idx] if idx < len(keys) else ''
-            if key:
-                return {'Authorization': f'Bearer {key}'}
+            targets.append((url.rstrip('/').removesuffix('/v1'), {'Authorization': f'Bearer {key}'} if key else {}))
 
-    fallback = os.getenv('HERMES_API_KEY') or os.getenv('OPENAI_API_KEY') or ''
-    return {'Authorization': f'Bearer {fallback}'} if fallback else {}
+    if not targets:
+        fallback = os.getenv('HERMES_API_KEY') or os.getenv('OPENAI_API_KEY') or ''
+        targets.append(
+            (
+                os.getenv('HERMES_API_BASE_URL', 'http://127.0.0.1:8642').rstrip('/').removesuffix('/v1'),
+                {'Authorization': f'Bearer {fallback}'} if fallback else {},
+            )
+        )
+
+    return targets
+
+
+def _api_auth_headers(request: Request) -> dict[str, str]:
+    return _api_targets(request)[0][1]
 
 
 def _dashboard_headers(dashboard_base: str) -> dict[str, str]:
@@ -307,6 +319,13 @@ def _compat_model_options(models_payload: dict[str, Any] | list[Any]) -> list[di
     return result
 
 
+def _profile_options_from_payloads(payloads: list[dict[str, Any] | list[Any]]) -> list[dict[str, str]]:
+    result = []
+    for payload in payloads:
+        result.extend(_compat_model_options(payload))
+    return _dedupe_options(result)
+
+
 def _schema_options(schema: dict[str, Any], key: str) -> list[dict[str, str]]:
     field = (schema.get('fields') or {}).get(key) if isinstance(schema, dict) else None
     values = field.get('options') if isinstance(field, dict) else None
@@ -373,15 +392,20 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
         except Exception:
             return default
 
-    api_headers = _api_auth_headers(request)
-    models_payload, catalog, model_info, config, schema = await asyncio.gather(
-        safe(_fetch_json(f'{api_base}/v1/models', headers=api_headers), {}),
+    api_targets = _api_targets(request)
+    profile_payloads_task = asyncio.gather(
+        *[safe(_fetch_json(f'{target_base}/v1/models', headers=headers), {}) for target_base, headers in api_targets]
+    )
+    models_payload, profile_payloads, catalog, model_info, config, schema = await asyncio.gather(
+        safe(_fetch_json(f'{api_base}/v1/models', headers=api_targets[0][1]), {}),
+        profile_payloads_task,
         safe(_fetch_json(f'{dashboard_base}/api/models/available', headers=dashboard_headers), {}),
         safe(_fetch_json(f'{dashboard_base}/api/model/info', headers=dashboard_headers), {}),
         safe(_fetch_json(f'{dashboard_base}/api/config', headers=dashboard_headers), {}),
         safe(_fetch_json(f'{dashboard_base}/api/config/schema', headers=dashboard_headers), {}),
     )
 
+    profile_options = _profile_options_from_payloads(list(profile_payloads))
     model_options = _hermes_catalog_model_options(catalog) or _compat_model_options(models_payload)
 
     configured_model = (
@@ -464,6 +488,8 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
 
     return {
         'current': current,
+        'profile_ids': [option['value'] for option in profile_options],
+        'profile_options': profile_options,
         'model_options': model_options,
         'reasoning_options': current_model_reasoning,
         'reasoning_options_by_model': reasoning_options_by_model,
