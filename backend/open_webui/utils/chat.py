@@ -117,10 +117,6 @@ async def generate_direct_chat_completion(
 
                             yield f'data: {json.dumps(data)}\n\n'
                         elif isinstance(data, str):
-                            if data.strip() == '[DONE]' or 'data: [DONE]' in data:
-                                yield 'data: [DONE]\n\n'
-                                break
-
                             if 'data:' in data:
                                 yield f'{data}\n\n'
                             else:

@@ -86,13 +86,10 @@
 
 	let selectedChatId = null;
 	let showCreateChannel = false;
-	let createChannelType = '';
 
 	// Pagination variables
 	let chatListLoading = false;
 	let allChatsLoaded = false;
-	let chatListRefreshRequestId = 0;
-	let pendingChatListRefreshRAF: number | null = null;
 
 	let showCreateFolderModal = false;
 
@@ -100,7 +97,6 @@
 
 	let showPinnedModels = false;
 	let showPinnedNotes = false;
-	let showStatusBoards = false;
 	let showChannels = false;
 	let showFolders = false;
 
@@ -110,8 +106,6 @@
 	let newFolderId = null;
 
 	$: pinnedItems = $settings?.pinnedMenuItems ?? DEFAULT_PINNED_ITEMS;
-	$: statusBoards = ($channels ?? []).filter((channel) => channel?.type === 'status');
-	$: discussionChannels = ($channels ?? []).filter((channel) => channel?.type !== 'status');
 
 	const isMenuItemVisible = (id) => {
 		switch (id) {
@@ -265,7 +259,7 @@
 	};
 
 	const initChannels = async () => {
-		// default (none), status, group, dm type
+		// default (none), group, dm type
 		const res = await getChannels(localStorage.token).catch((error) => {
 			return null;
 		});
@@ -274,74 +268,60 @@
 			await channels.set(
 				res.sort(
 					(a, b) =>
-						['status', '', null, 'group', 'dm'].indexOf(a.type) -
-						['status', '', null, 'group', 'dm'].indexOf(b.type)
+						['', null, 'group', 'dm'].indexOf(a.type) - ['', null, 'group', 'dm'].indexOf(b.type)
 				)
 			);
 		}
 	};
 
 	const initChatList = async () => {
-		const requestId = ++chatListRefreshRequestId;
-
 		// Reset pagination variables
+		console.log('initChatList');
 		currentChatPage.set(1);
 		allChatsLoaded = false;
 		scrollPaginationEnabled.set(false);
 
-		const [, _tags, _pinnedChats, _pinnedNotes, _chats] = await Promise.all([
-			initFolders(),
-			getAllTags(localStorage.token).catch(() => []),
-			getPinnedChatList(localStorage.token).catch(() => []),
-			(async () => {
+		initFolders();
+		await Promise.all([
+			await (async () => {
+				console.log('Init tags');
+				const _tags = await getAllTags(localStorage.token);
+				tags.set(_tags);
+			})(),
+			await (async () => {
+				console.log('Init pinned chats');
+				const _pinnedChats = await getPinnedChatList(localStorage.token);
+				pinnedChats.set(_pinnedChats);
+			})(),
+			await (async () => {
 				if (
 					$config?.features?.enable_notes &&
 					($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true))
 				) {
-					return await getPinnedNoteList(localStorage.token).catch(() => []);
+					console.log('Init pinned notes');
+					const _pinnedNotes = await getPinnedNoteList(localStorage.token).catch(() => []);
+					pinnedNotes.set(_pinnedNotes);
 				}
-				return $pinnedNotes ?? [];
 			})(),
-			getChatList(localStorage.token, 1).catch(() => [])
+			await (async () => {
+				console.log('Init chat list');
+				const _chats = await getChatList(localStorage.token, $currentChatPage);
+				await chats.set(_chats);
+			})()
 		]);
-
-		if (requestId !== chatListRefreshRequestId) {
-			return;
-		}
-
-		tags.set(_tags);
-		pinnedChats.set(_pinnedChats);
-		pinnedNotes.set(_pinnedNotes);
-		chats.set(_chats);
 
 		// Enable pagination
 		scrollPaginationEnabled.set(true);
 	};
 
-	const scheduleChatListRefresh = () => {
-		if (pendingChatListRefreshRAF !== null) {
-			return;
-		}
-
-		pendingChatListRefreshRAF = requestAnimationFrame(() => {
-			pendingChatListRefreshRAF = null;
-			initChatList();
-		});
-	};
-
 	const loadMoreChats = async () => {
-		if (chatListLoading || allChatsLoaded) {
-			return;
-		}
-
 		chatListLoading = true;
 
-		const nextPage = $currentChatPage + 1;
-		currentChatPage.set(nextPage);
+		currentChatPage.set($currentChatPage + 1);
 
 		let newChatList = [];
 
-		newChatList = await getChatList(localStorage.token, nextPage);
+		newChatList = await getChatList(localStorage.token, $currentChatPage);
 
 		// once the bottom of the list has been reached (no results) there is no need to continue querying
 		allChatsLoaded = newChatList.length === 0;
@@ -653,7 +633,7 @@
 				return newSet;
 			});
 		} else if (event.data?.type === 'chat:list') {
-			scheduleChatListRefresh();
+			initChatList();
 		}
 	};
 
@@ -701,9 +681,6 @@
 		if (scrollTopRAF !== null) {
 			cancelAnimationFrame(scrollTopRAF);
 		}
-		if (pendingChatListRefreshRAF !== null) {
-			cancelAnimationFrame(pendingChatListRefreshRAF);
-		}
 	});
 
 	const isWindows = /Windows/i.test(navigator.userAgent);
@@ -724,7 +701,6 @@
 
 <ChannelModal
 	bind:show={showCreateChannel}
-	initialType={createChannelType}
 	onSubmit={async (payload: any) => {
 		let { type, name, is_private, access_grants, group_ids, user_ids } = payload ?? {};
 		name = name?.trim();
@@ -757,11 +733,7 @@
 			$socket.emit('join-channels', { auth: { token: $user?.token } });
 			await initChannels();
 			showCreateChannel = false;
-			if (res.type === 'status') {
-				showStatusBoards = true;
-			} else {
-				showChannels = true;
-			}
+			showChannels = true;
 			goto(`/channels/${res.id}`);
 		}
 	}}
@@ -1292,43 +1264,12 @@
 					</Folder>
 				{/if}
 
-				{#if $config?.features?.enable_channels && ($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true)) && ($user?.role === 'admin' || statusBoards.length > 0)}
-					<Folder
-						id="sidebar-channels"
-						bind:open={showStatusBoards}
-						className="px-2 mt-0.5"
-						name={$i18n.t('Channels')}
-						chevron={false}
-						dragAndDrop={false}
-						onAdd={$user?.role === 'admin'
-							? async () => {
-									await tick();
-
-									setTimeout(() => {
-										createChannelType = 'status';
-										showCreateChannel = true;
-									}, 0);
-								}
-							: null}
-						onAddLabel={$i18n.t('Create Channel')}
-					>
-						{#each statusBoards as channel (`status-${channel?.id}`)}
-							<ChannelItem
-								{channel}
-								onUpdate={async () => {
-									await initChannels();
-								}}
-							/>
-						{/each}
-					</Folder>
-				{/if}
-
 				{#if $config?.features?.enable_channels && ($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))}
 					<Folder
-						id="sidebar-discussions"
+						id="sidebar-channels"
 						bind:open={showChannels}
 						className="px-2 mt-0.5"
-						name={$i18n.t('Discussions')}
+						name={$i18n.t('Channels')}
 						chevron={false}
 						dragAndDrop={false}
 						onAdd={$user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true)
@@ -1336,14 +1277,13 @@
 									await tick();
 
 									setTimeout(() => {
-										createChannelType = '';
 										showCreateChannel = true;
 									}, 0);
 								}
 							: null}
 						onAddLabel={$i18n.t('Create Channel')}
 					>
-						{#each discussionChannels as channel, channelIdx (`${channel?.id}`)}
+						{#each $channels as channel, channelIdx (`${channel?.id}`)}
 							<ChannelItem
 								{channel}
 								onUpdate={async () => {
@@ -1351,7 +1291,7 @@
 								}}
 							/>
 
-							{#if channelIdx < discussionChannels.length - 1 && channel.type !== discussionChannels[channelIdx + 1]?.type}<hr
+							{#if channelIdx < $channels.length - 1 && channel.type !== $channels[channelIdx + 1]?.type}<hr
 									class=" border-gray-100/40 dark:border-gray-800/10 my-1.5 w-full"
 								/>
 							{/if}

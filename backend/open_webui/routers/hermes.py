@@ -1,8 +1,6 @@
 import asyncio
 import os
-import re
 from typing import Any
-from urllib.parse import urlparse
 
 import aiohttp
 from fastapi import APIRouter, Depends, Request
@@ -18,134 +16,62 @@ HERMES_COMMANDS = [
     {
         'category': 'Session',
         'commands': [
-            {'name': 'new', 'label': 'Start a new session', 'ui': 'native-chat', 'aliases': ['reset']},
-            {'name': 'retry', 'label': 'Retry the last message', 'ui': 'native-chat'},
-            {'name': 'undo', 'label': 'Remove the last exchange', 'ui': 'native-chat'},
-            {'name': 'title', 'label': 'Set a title for the current session', 'ui': 'native-chat', 'args_hint': '[name]'},
-            {
-                'name': 'branch',
-                'label': 'Branch the current session',
-                'ui': 'native-chat',
-                'aliases': ['fork'],
-                'args_hint': '[name]',
-            },
-            {'name': 'compress', 'label': 'Manually compress conversation context', 'ui': 'native-chat', 'args_hint': '[focus topic]'},
-            {'name': 'rollback', 'label': 'List or restore filesystem checkpoints', 'ui': 'native-chat', 'args_hint': '[number]'},
-            {
-                'name': 'snapshot',
-                'label': 'Create or restore Hermes config/state snapshots',
-                'ui': 'native-chat',
-                'aliases': ['snap'],
-                'args_hint': '[create|restore <id>|prune]',
-                'subcommands': ['create', 'restore', 'prune'],
-            },
-            {'name': 'stop', 'label': 'Kill all running background processes', 'ui': 'native-chat'},
-            {'name': 'approve', 'label': 'Approve a pending dangerous command', 'ui': 'native-chat', 'args_hint': '[session|always]'},
-            {'name': 'deny', 'label': 'Deny a pending dangerous command', 'ui': 'native-chat'},
-            {'name': 'background', 'label': 'Run a prompt in the background', 'ui': 'native-chat', 'aliases': ['bg'], 'args_hint': '<prompt>'},
-            {'name': 'btw', 'label': 'Ask an ephemeral side question', 'ui': 'native-chat', 'args_hint': '<question>'},
-            {'name': 'queue', 'label': 'Queue a prompt for the next turn', 'ui': 'native-chat', 'aliases': ['q'], 'args_hint': '<prompt>'},
-            {'name': 'status', 'label': 'Show session info', 'ui': 'dashboard'},
-            {'name': 'sethome', 'label': 'Set this chat as the home channel', 'ui': 'native-chat', 'aliases': ['set-home']},
-            {'name': 'resume', 'label': 'Resume a previously named session', 'ui': 'native-chat', 'args_hint': '[name]'},
-            {'name': 'restart', 'label': 'Gracefully restart the gateway', 'ui': 'dashboard'},
+            {'name': 'new', 'label': 'Start a new Hermes session', 'ui': 'button'},
+            {'name': 'retry', 'label': 'Retry the last message', 'ui': 'button'},
+            {'name': 'undo', 'label': 'Remove last exchange', 'ui': 'button'},
+            {'name': 'branch', 'label': 'Branch current session', 'ui': 'menu'},
+            {'name': 'compress', 'label': 'Compress context', 'ui': 'button'},
+            {'name': 'rollback', 'label': 'Restore filesystem checkpoint', 'ui': 'menu'},
+            {'name': 'snapshot', 'label': 'Create or restore config/state snapshot', 'ui': 'menu'},
+            {'name': 'background', 'label': 'Run a background prompt', 'ui': 'command'},
+            {'name': 'btw', 'label': 'Ask side question without persisting', 'ui': 'command'},
+            {'name': 'queue', 'label': 'Queue prompt for next turn', 'ui': 'command'},
+            {'name': 'status', 'label': 'Show session info', 'ui': 'status-panel'},
+            {'name': 'resume', 'label': 'Resume named session', 'ui': 'menu'},
         ],
     },
     {
-        'category': 'Configuration',
+        'category': 'Runtime',
         'commands': [
-            {'name': 'model', 'label': 'Switch model for this session', 'ui': 'composer-selector', 'args_hint': '[model] [--global]'},
-            {'name': 'provider', 'label': 'Show available providers and current provider', 'ui': 'dashboard'},
-            {'name': 'personality', 'label': 'Set a predefined personality', 'ui': 'native-chat', 'args_hint': '[name]'},
-            {
-                'name': 'reasoning',
-                'label': 'Manage reasoning effort and display',
-                'ui': 'composer-selector',
-                'args_hint': '[level|show|hide]',
-                'subcommands': ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'show', 'hide', 'on', 'off'],
-            },
-            {
-                'name': 'fast',
-                'label': 'Toggle fast mode',
-                'ui': 'composer-selector',
-                'args_hint': '[normal|fast|status]',
-                'subcommands': ['normal', 'fast', 'status', 'on', 'off'],
-            },
-            {'name': 'yolo', 'label': 'Toggle YOLO approval mode', 'ui': 'native-chat'},
-            {
-                'name': 'voice',
-                'label': 'Toggle voice mode',
-                'ui': 'native-chat',
-                'args_hint': '[on|off|tts|status]',
-                'subcommands': ['on', 'off', 'tts', 'status'],
-            },
+            {'name': 'model', 'label': 'Switch model for this session', 'ui': 'composer-selector'},
+            {'name': 'provider', 'label': 'Show available providers', 'ui': 'composer-selector'},
+            {'name': 'reasoning', 'label': 'Set reasoning effort/display', 'ui': 'composer-selector'},
+            {'name': 'fast', 'label': 'Toggle fast mode', 'ui': 'composer-selector'},
+            {'name': 'yolo', 'label': 'Toggle approval mode', 'ui': 'toggle'},
+            {'name': 'voice', 'label': 'Toggle voice mode', 'ui': 'toggle'},
+            {'name': 'personality', 'label': 'Set personality', 'ui': 'menu'},
         ],
     },
     {
         'category': 'Tools & Skills',
         'commands': [
-            {
-                'name': 'tools',
-                'label': 'Manage tools',
-                'ui': 'dashboard',
-                'args_hint': '[list|disable|enable] [name...]',
-                'subcommands': ['list', 'disable', 'enable'],
-            },
+            {'name': 'reload', 'label': 'Reload .env into running session', 'ui': 'button'},
+            {'name': 'reload-mcp', 'label': 'Reload MCP servers', 'ui': 'button'},
+            {'name': 'tools', 'label': 'Manage tools', 'ui': 'dashboard'},
             {'name': 'toolsets', 'label': 'List available toolsets', 'ui': 'dashboard'},
-            {
-                'name': 'skills',
-                'label': 'Search, install, inspect, or manage skills',
-                'ui': 'dashboard',
-                'subcommands': ['search', 'browse', 'inspect', 'install'],
-            },
-            {
-                'name': 'cron',
-                'label': 'Manage scheduled tasks',
-                'ui': 'dashboard',
-                'args_hint': '[subcommand]',
-                'subcommands': ['list', 'add', 'create', 'edit', 'pause', 'resume', 'run', 'remove'],
-            },
-            {'name': 'reload', 'label': 'Reload .env into the running session', 'ui': 'native-chat'},
-            {'name': 'reload-mcp', 'label': 'Reload MCP servers from config', 'ui': 'native-chat', 'aliases': ['reload_mcp']},
-            {
-                'name': 'browser',
-                'label': 'Connect browser tools to live Chrome via CDP',
-                'ui': 'dashboard',
-                'args_hint': '[connect|disconnect|status]',
-                'subcommands': ['connect', 'disconnect', 'status'],
-            },
-            {'name': 'plugins', 'label': 'List installed plugins and their status', 'ui': 'dashboard'},
+            {'name': 'skills', 'label': 'Search/install/manage skills', 'ui': 'dashboard'},
+            {'name': 'cron', 'label': 'Manage scheduled tasks', 'ui': 'dashboard'},
+            {'name': 'browser', 'label': 'Connect live browser tools', 'ui': 'dashboard'},
+            {'name': 'plugins', 'label': 'List installed plugins', 'ui': 'dashboard'},
         ],
     },
     {
         'category': 'Info',
         'commands': [
-            {'name': 'commands', 'label': 'Browse all commands and skills', 'ui': 'dashboard', 'args_hint': '[page]'},
+            {'name': 'commands', 'label': 'Browse all commands', 'ui': 'dashboard'},
             {'name': 'help', 'label': 'Show available commands', 'ui': 'dashboard'},
-            {'name': 'usage', 'label': 'Show token usage and rate limits', 'ui': 'dashboard'},
-            {'name': 'insights', 'label': 'Show usage insights and analytics', 'ui': 'dashboard', 'args_hint': '[days]'},
-            {'name': 'profile', 'label': 'Show active profile and home directory', 'ui': 'dashboard'},
-            {'name': 'debug', 'label': 'Upload a debug report and get shareable links', 'ui': 'dashboard'},
-            {'name': 'update', 'label': 'Update Hermes Agent to the latest version', 'ui': 'dashboard'},
+            {'name': 'usage', 'label': 'Show token usage and rate limits', 'ui': 'status-panel'},
+            {'name': 'insights', 'label': 'Show usage analytics', 'ui': 'dashboard'},
+            {'name': 'profile', 'label': 'Show active profile and home directory', 'ui': 'status-panel'},
+            {'name': 'debug', 'label': 'Upload debug report', 'ui': 'button'},
+            {'name': 'update', 'label': 'Update Hermes Agent', 'ui': 'button'},
         ],
     },
 ]
 
 
-def _dashboard_base_url(request: Request | None = None) -> str:
-    configured_url = os.getenv('HERMES_DASHBOARD_BASE_URL')
-    if configured_url:
-        return configured_url.rstrip('/')
-
-    if request:
-        urls = getattr(request.app.state.config, 'OPENAI_API_BASE_URLS', []) or []
-        for url in urls:
-            parsed_host = urlparse(url).hostname or ''
-
-            if parsed_host and parsed_host not in {'127.0.0.1', 'localhost'}:
-                return f'http://{parsed_host}:9119'
-
-    return 'http://127.0.0.1:9119'
+def _dashboard_base_url() -> str:
+    return os.getenv('HERMES_DASHBOARD_BASE_URL', 'http://127.0.0.1:9119').rstrip('/')
 
 
 def _api_base_url(request: Request) -> str:
@@ -156,37 +82,9 @@ def _api_base_url(request: Request) -> str:
     return os.getenv('HERMES_API_BASE_URL', 'http://127.0.0.1:8642').rstrip('/').removesuffix('/v1')
 
 
-def _api_targets(request: Request) -> list[tuple[str, dict[str, str]]]:
-    targets = []
-    urls = getattr(request.app.state.config, 'OPENAI_API_BASE_URLS', []) or []
-    keys = getattr(request.app.state.config, 'OPENAI_API_KEYS', []) or []
-    for idx, url in enumerate(urls):
-        if url and ('8642' in url or '8652' in url or 'hermes' in url.lower()):
-            key = keys[idx] if idx < len(keys) else ''
-            targets.append((url.rstrip('/').removesuffix('/v1'), {'Authorization': f'Bearer {key}'} if key else {}))
-
-    if not targets:
-        fallback = os.getenv('HERMES_API_KEY') or os.getenv('OPENAI_API_KEY') or ''
-        targets.append(
-            (
-                os.getenv('HERMES_API_BASE_URL', 'http://127.0.0.1:8642').rstrip('/').removesuffix('/v1'),
-                {'Authorization': f'Bearer {fallback}'} if fallback else {},
-            )
-        )
-
-    return targets
-
-
-def _api_auth_headers(request: Request) -> dict[str, str]:
-    return _api_targets(request)[0][1]
-
-
-def _dashboard_headers(dashboard_base: str) -> dict[str, str]:
-    host = urlparse(dashboard_base).hostname or ''
-    return {'Host': 'localhost'} if host == 'host.docker.internal' else {}
-
-
-async def _fetch_json(url: str, headers: dict[str, str] | None = None, timeout: float = 4.0) -> dict[str, Any] | list[Any]:
+async def _fetch_json(
+    url: str, headers: dict[str, str] | None = None, timeout: float = 4.0
+) -> dict[str, Any] | list[Any]:
     session = await get_session()
     async with session.get(
         url,
@@ -224,54 +122,6 @@ def _dedupe_options(options: list[dict[str, str]]) -> list[dict[str, str]]:
     return result
 
 
-def _reasoning_option_values_for_model(model_id: str, supports_reasoning: bool | None = None) -> list[str]:
-    model = str(model_id or '').strip().lower()
-    model = re.sub(r'^[a-z0-9_.-]+/', '', model)
-
-    if not model:
-        return ['']
-
-    # OpenAI publishes model-specific reasoning effort sets. Keep this scoped so
-    # the harness does not offer invalid efforts for older or non-reasoning models.
-    if re.search(r'\bgpt-5\.(?:4|5)(?:[-\w.]*)?$', model):
-        return ['', 'none', 'low', 'medium', 'high', 'xhigh']
-    if re.search(r'\bgpt-5\.[23](?:[-\w.]*)?$', model):
-        return ['', 'low', 'medium', 'high', 'xhigh']
-    if re.search(r'\bgpt-5\.1(?:[-\w.]*)?$', model):
-        return ['', 'none', 'low', 'medium', 'high']
-    if re.search(r'\bgpt-5(?:-(?:mini|nano|codex|pro).*)?$', model):
-        return ['', 'minimal', 'low', 'medium', 'high']
-    if re.search(r'\bo[134](?:-|$)|\bo3(?:-|$)|\bo4(?:-|$)', model):
-        return ['', 'low', 'medium', 'high']
-
-    if supports_reasoning is True:
-        return ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh']
-
-    return ['']
-
-
-def _reasoning_options_for_model(model: dict[str, str], global_options: list[dict[str, str]]) -> list[dict[str, str]]:
-    supported = model.get('supports_reasoning')
-    supports_reasoning = None if supported is None else str(supported).lower() in {'1', 'true', 'yes'}
-    values = _reasoning_option_values_for_model(model.get('value') or '', supports_reasoning)
-    by_value = {str(option.get('value') or ''): option for option in global_options}
-
-    return _dedupe_options(
-        [
-            {
-                'value': value,
-                'label': by_value.get(value, {}).get('label') or _label_from_value(value),
-                **(
-                    {'description': by_value[value]['description']}
-                    if value in by_value and by_value[value].get('description')
-                    else {}
-                ),
-            }
-            for value in values
-        ]
-    )
-
-
 def _hermes_catalog_model_options(catalog: dict[str, Any]) -> list[dict[str, str]]:
     models = catalog.get('models') if isinstance(catalog, dict) else None
     if not isinstance(models, list):
@@ -284,12 +134,10 @@ def _hermes_catalog_model_options(catalog: dict[str, Any]) -> list[dict[str, str
             value = str(model.get('id') or model.get('value') or '').strip()
             label = str(model.get('label') or value).strip()
             source = str(model.get('source') or '').strip()
-            supports_reasoning = model.get('supports_reasoning')
         else:
             value = str(model or '').strip()
             label = value
             source = ''
-            supports_reasoning = None
         if not value:
             continue
         result.append(
@@ -297,7 +145,6 @@ def _hermes_catalog_model_options(catalog: dict[str, Any]) -> list[dict[str, str
                 'value': value,
                 'label': label or value,
                 'description': source or (f'{provider} model' if provider else 'Hermes model'),
-                **({'supports_reasoning': str(bool(supports_reasoning)).lower()} if supports_reasoning is not None else {}),
             }
         )
     return result
@@ -309,6 +156,8 @@ def _compat_model_options(models_payload: dict[str, Any] | list[Any]) -> list[di
         if not isinstance(model, dict) or not model.get('id'):
             continue
         model_id = str(model['id'])
+        if model_id == 'hermes-agent':
+            continue
         result.append(
             {
                 'value': model_id,
@@ -317,13 +166,6 @@ def _compat_model_options(models_payload: dict[str, Any] | list[Any]) -> list[di
             }
         )
     return result
-
-
-def _profile_options_from_payloads(payloads: list[dict[str, Any] | list[Any]]) -> list[dict[str, str]]:
-    result = []
-    for payload in payloads:
-        result.extend(_compat_model_options(payload))
-    return _dedupe_options(result)
 
 
 def _schema_options(schema: dict[str, Any], key: str) -> list[dict[str, str]]:
@@ -348,8 +190,7 @@ def _config_value(config: dict[str, Any], key: str) -> str:
 @router.get('/overview')
 async def get_hermes_overview(request: Request, user=Depends(get_verified_user)):
     api_base = _api_base_url(request)
-    dashboard_base = _dashboard_base_url(request)
-    dashboard_headers = _dashboard_headers(dashboard_base)
+    dashboard_base = _dashboard_base_url()
 
     async def safe(name: str, coro):
         try:
@@ -360,10 +201,10 @@ async def get_hermes_overview(request: Request, user=Depends(get_verified_user))
     results = dict(
         await asyncio.gather(
             safe('health', _fetch_json(f'{api_base}/health')),
-            safe('models', _fetch_json(f'{api_base}/v1/models', headers=_api_auth_headers(request))),
-            safe('dashboard_status', _fetch_json(f'{dashboard_base}/api/status', headers=dashboard_headers)),
-            safe('model_info', _fetch_json(f'{dashboard_base}/api/model/info', headers=dashboard_headers)),
-            safe('sessions', _fetch_json(f'{dashboard_base}/api/sessions?limit=20', headers=dashboard_headers)),
+            safe('models', _fetch_json(f'{api_base}/v1/models')),
+            safe('dashboard_status', _fetch_json(f'{dashboard_base}/api/status')),
+            safe('model_info', _fetch_json(f'{dashboard_base}/api/model/info')),
+            safe('sessions', _fetch_json(f'{dashboard_base}/api/sessions?limit=20')),
         )
     )
 
@@ -383,8 +224,7 @@ async def get_hermes_commands(user=Depends(get_verified_user)):
 @router.get('/runtime-options')
 async def get_hermes_runtime_options(request: Request, user=Depends(get_verified_user)):
     api_base = _api_base_url(request)
-    dashboard_base = _dashboard_base_url(request)
-    dashboard_headers = _dashboard_headers(dashboard_base)
+    dashboard_base = _dashboard_base_url()
 
     async def safe(coro, default):
         try:
@@ -392,28 +232,23 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
         except Exception:
             return default
 
-    api_targets = _api_targets(request)
-    profile_payloads_task = asyncio.gather(
-        *[safe(_fetch_json(f'{target_base}/v1/models', headers=headers), {}) for target_base, headers in api_targets]
-    )
-    models_payload, profile_payloads, catalog, model_info, config, schema = await asyncio.gather(
-        safe(_fetch_json(f'{api_base}/v1/models', headers=api_targets[0][1]), {}),
-        profile_payloads_task,
-        safe(_fetch_json(f'{dashboard_base}/api/models/available', headers=dashboard_headers), {}),
-        safe(_fetch_json(f'{dashboard_base}/api/model/info', headers=dashboard_headers), {}),
-        safe(_fetch_json(f'{dashboard_base}/api/config', headers=dashboard_headers), {}),
-        safe(_fetch_json(f'{dashboard_base}/api/config/schema', headers=dashboard_headers), {}),
+    models_payload, catalog, model_info, config, schema = await asyncio.gather(
+        safe(_fetch_json(f'{api_base}/v1/models'), {}),
+        safe(_fetch_json(f'{dashboard_base}/api/models/available'), {}),
+        safe(_fetch_json(f'{dashboard_base}/api/model/info'), {}),
+        safe(_fetch_json(f'{dashboard_base}/api/config'), {}),
+        safe(_fetch_json(f'{dashboard_base}/api/config/schema'), {}),
     )
 
-    profile_options = _profile_options_from_payloads(list(profile_payloads))
     model_options = _hermes_catalog_model_options(catalog) or _compat_model_options(models_payload)
 
-    configured_model = (
-        (model_info.get('model') if isinstance(model_info, dict) else None)
-        or (_config_value(config, 'model') if isinstance(config, dict) else '')
+    configured_model = (model_info.get('model') if isinstance(model_info, dict) else None) or (
+        _config_value(config, 'model') if isinstance(config, dict) else ''
     )
     if configured_model:
-        model_options.insert(0, {'value': configured_model, 'label': configured_model, 'description': 'Configured Hermes model'})
+        model_options.insert(
+            0, {'value': configured_model, 'label': configured_model, 'description': 'Configured Hermes model'}
+        )
 
     reasoning_options = _schema_options(schema, 'agent.reasoning_effort')
     fast_options = _schema_options(schema, 'agent.service_tier')
@@ -428,27 +263,15 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
             {'value': 'fast', 'label': 'Fast'},
         ]
 
-    model_options = _dedupe_options(model_options)
-    reasoning_options = _dedupe_options(reasoning_options)
-    fast_options = _dedupe_options(fast_options)
-    reasoning_options_by_model = {
-        model['value']: _reasoning_options_for_model(model, reasoning_options)
-        for model in model_options
-        if model.get('value')
-    }
-
     current_reasoning = _config_value(config, 'agent.reasoning_effort') if isinstance(config, dict) else ''
     current_fast = _config_value(config, 'agent.service_tier') if isinstance(config, dict) else ''
     current_fast = 'fast' if current_fast in {'fast', 'priority', 'on'} else 'normal'
 
     current = {
         'model': configured_model or (model_options[0]['value'] if model_options else ''),
-        'reasoning': current_reasoning or (reasoning_options_by_model.get(configured_model or '', reasoning_options)[0]['value'] if (reasoning_options_by_model.get(configured_model or '', reasoning_options)) else ''),
+        'reasoning': current_reasoning or (reasoning_options[0]['value'] if reasoning_options else ''),
         'fast': current_fast or (fast_options[0]['value'] if fast_options else ''),
     }
-    current_model_reasoning = reasoning_options_by_model.get(current['model']) or reasoning_options
-    if current_model_reasoning and current['reasoning'] not in {option['value'] for option in current_model_reasoning}:
-        current['reasoning'] = current_model_reasoning[0]['value']
 
     config_options = [
         {
@@ -459,7 +282,7 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
             'currentValue': current['model'],
             'options': [
                 {'value': option['value'], 'name': option['label'], 'description': option.get('description', '')}
-                for option in model_options
+                for option in _dedupe_options(model_options)
             ],
         },
         {
@@ -470,7 +293,7 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
             'currentValue': current['reasoning'],
             'options': [
                 {'value': option['value'], 'name': option['label'], 'description': option.get('description', '')}
-                for option in current_model_reasoning
+                for option in _dedupe_options(reasoning_options)
             ],
         },
         {
@@ -481,19 +304,16 @@ async def get_hermes_runtime_options(request: Request, user=Depends(get_verified
             'currentValue': current['fast'],
             'options': [
                 {'value': option['value'], 'name': option['label'], 'description': option.get('description', '')}
-                for option in fast_options
+                for option in _dedupe_options(fast_options)
             ],
         },
     ]
 
     return {
         'current': current,
-        'profile_ids': [option['value'] for option in profile_options],
-        'profile_options': profile_options,
-        'model_options': model_options,
-        'reasoning_options': current_model_reasoning,
-        'reasoning_options_by_model': reasoning_options_by_model,
-        'fast_options': fast_options,
+        'model_options': _dedupe_options(model_options),
+        'reasoning_options': _dedupe_options(reasoning_options),
+        'fast_options': _dedupe_options(fast_options),
         'config_options': config_options,
         'sources': {
             'models': f'{dashboard_base}/api/models/available',

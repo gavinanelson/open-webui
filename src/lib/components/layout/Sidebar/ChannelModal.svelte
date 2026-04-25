@@ -25,7 +25,6 @@
 
 	export let channel: any = null;
 	export let edit = false;
-	export let initialType = '';
 
 	let channelTypes = ['group', 'dm'];
 	let type = '';
@@ -67,7 +66,7 @@
 			type: type,
 			name: name.replace(/\s/g, '-'),
 			is_private: type === 'group' ? (isPrivate ?? true) : null,
-			access_grants: ['', 'status'].includes(type) ? accessGrants : [],
+			access_grants: type === '' ? accessGrants : [],
 			group_ids: groupIds,
 			user_ids: userIds
 		});
@@ -77,12 +76,12 @@
 
 	const init = () => {
 		if ($user?.role === 'admin') {
-			channelTypes = ['', 'status', 'group', 'dm'];
+			channelTypes = ['', 'group', 'dm'];
 		} else {
 			channelTypes = ['group', 'dm'];
 		}
 
-		type = channel?.type ?? (channelTypes.includes(initialType) ? initialType : channelTypes[0]);
+		type = channel?.type ?? channelTypes[0];
 
 		if (channel) {
 			name = channel?.name ?? '';
@@ -133,9 +132,7 @@
 	const resetHandler = () => {
 		type = '';
 		name = '';
-		isPrivate = null;
 		accessGrants = [];
-		groupIds = [];
 		userIds = [];
 		loading = false;
 	};
@@ -179,13 +176,9 @@
 										? $i18n.t('A private conversation between you and selected users')
 										: type === 'group'
 											? $i18n.t('A collaboration channel where people join as members')
-											: type === 'status'
-												? $i18n.t(
-														'A persistent status board for cron jobs, automations, and agent updates'
-													)
-												: $i18n.t(
-														'A discussion channel where access is controlled by groups and permissions'
-													)}
+											: $i18n.t(
+													'A discussion channel where access is controlled by groups and permissions'
+												)}
 									placement="top-start"
 								>
 									<select
@@ -198,8 +191,6 @@
 													{$i18n.t('Group Channel')}
 												{:else if channelType === 'dm'}
 													{$i18n.t('Direct Message')}
-												{:else if channelType === 'status'}
-													{$i18n.t('Channel')}
 												{:else if channelType === ''}
 													{$i18n.t('Channel')}
 												{/if}
@@ -214,8 +205,6 @@
 					<div class=" text-gray-300 dark:text-gray-700 text-xs">
 						{#if type === ''}
 							{$i18n.t('Discussion channel where access is based on groups and permissions')}
-						{:else if type === 'status'}
-							{$i18n.t('Persistent status board for cron jobs, automations, and agent updates')}
 						{:else if type === 'group'}
 							{$i18n.t('Collaboration channel where people join as members')}
 						{:else if type === 'dm'}
@@ -246,7 +235,7 @@
 
 					{#if type !== 'dm'}
 						<div class="-mx-2 mb-1 mt-2.5 px-2">
-							{#if ['', 'status'].includes(type)}
+							{#if type === ''}
 								<AccessControl bind:accessGrants accessRoles={['read', 'write']} />
 							{:else if type === 'group'}
 								<Visibility

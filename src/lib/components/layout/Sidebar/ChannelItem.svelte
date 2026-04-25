@@ -13,7 +13,6 @@
 	import ChannelModal from './ChannelModal.svelte';
 	import Lock from '$lib/components/icons/Lock.svelte';
 	import Hashtag from '$lib/components/icons/Hashtag.svelte';
-	import ClockRotateRight from '$lib/components/icons/ClockRotateRight.svelte';
 	import Users from '$lib/components/icons/Users.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Emoji from '$lib/components/common/Emoji.svelte';
@@ -144,9 +143,7 @@
 					{/if}
 				{:else}
 					<div class=" size-4 justify-center flex items-center ml-1">
-						{#if channel?.type === 'status'}
-							<ClockRotateRight className="size-3.5" strokeWidth="2.5" />
-						{:else if isPublicChannel(channel)}
+						{#if isPublicChannel(channel)}
 							<Hashtag className="size-3.5" strokeWidth="2.5" />
 						{:else}
 							<Lock className="size-[15px]" strokeWidth="2" />

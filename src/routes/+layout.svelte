@@ -590,92 +590,25 @@
 									// res will either be SSE or JSON
 									const reader = res.body.getReader();
 									const decoder = new TextDecoder();
-									let streamBuffer = '';
-									let eventType = '';
-									let dataLines = [];
-
-									const flushSseEvent = () => {
-										if (!dataLines.length) {
-											eventType = '';
-											return null;
-										}
-
-										const data = dataLines.join('\n');
-										const frame = `${eventType ? `event: ${eventType}\n` : ''}data: ${data}`;
-										eventType = '';
-										dataLines = [];
-										return frame;
-									};
-
-									const processSseLine = (rawLine) => {
-										const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
-
-										if (line === '') {
-											return flushSseEvent();
-										}
-
-										if (line.startsWith(':')) {
-											return null;
-										}
-
-										const separatorIndex = line.indexOf(':');
-										const field = separatorIndex === -1 ? line : line.slice(0, separatorIndex);
-										let value = separatorIndex === -1 ? '' : line.slice(separatorIndex + 1);
-										if (value.startsWith(' ')) {
-											value = value.slice(1);
-										}
-
-										if (field === 'event') {
-											eventType = value;
-										} else if (field === 'data') {
-											dataLines.push(value);
-										}
-
-										return null;
-									};
 
 									const processStream = async () => {
-										let streamDone = false;
-										while (!streamDone) {
+										while (true) {
 											// Read data chunks from the response stream
 											const { done, value } = await reader.read();
 											if (done) {
-												streamDone = true;
-												continue;
+												break;
 											}
 
 											// Decode the received chunk
-											streamBuffer += decoder.decode(value, { stream: true });
+											const chunk = decoder.decode(value, { stream: true });
 
-											let newlineIndex = streamBuffer.indexOf('\n');
-											while (newlineIndex !== -1) {
-												const line = streamBuffer.slice(0, newlineIndex);
-												streamBuffer = streamBuffer.slice(newlineIndex + 1);
-												const frame = processSseLine(line);
-												if (frame) {
-													console.log(frame);
-													$socket?.emit(channel, frame);
-													if (frame.includes('data: [DONE]')) {
-														return;
-													}
-												}
-												newlineIndex = streamBuffer.indexOf('\n');
+											// Process lines within the chunk
+											const lines = chunk.split('\n').filter((line) => line.trim() !== '');
+
+											for (const line of lines) {
+												console.log(line);
+												$socket?.emit(channel, line);
 											}
-										}
-
-										streamBuffer += decoder.decode();
-										if (streamBuffer) {
-											const frame = processSseLine(streamBuffer);
-											if (frame) {
-												console.log(frame);
-												$socket?.emit(channel, frame);
-											}
-										}
-
-										const frame = flushSseEvent();
-										if (frame) {
-											console.log(frame);
-											$socket?.emit(channel, frame);
 										}
 									};
 

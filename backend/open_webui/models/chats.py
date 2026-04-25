@@ -387,19 +387,8 @@ class ChatTable:
         try:
             async with get_async_db_context(db) as db:
                 chat_item = await db.get(Chat, id)
-                if chat_item is None:
-                    return None
-
-                if 'title' not in chat:
-                    chat = {
-                        **chat,
-                        'title': chat_item.title
-                        or (chat_item.chat or {}).get('title')
-                        or 'New Chat',
-                    }
-
                 chat_item.chat = self._clean_null_bytes(chat)
-                chat_item.title = self._clean_null_bytes(chat['title'])
+                chat_item.title = self._clean_null_bytes(chat['title']) if 'title' in chat else 'New Chat'
 
                 chat_item.updated_at = int(time.time())
 
