@@ -160,6 +160,20 @@ async def test_iter_sse_events_handles_coalesced_frames():
 
 
 @pytest.mark.asyncio
+async def test_iter_sse_events_surfaces_keepalive_comments():
+	async def chunks():
+		yield b': keepalive\n\n'
+		yield b'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'
+
+	events = [event async for event in iter_sse_events(chunks())]
+
+	assert events == [
+		('__sse_comment__', 'keepalive'),
+		(None, '{"choices":[{"delta":{"content":"hi"}}]}'),
+	]
+
+
+@pytest.mark.asyncio
 async def test_iter_sse_events_handles_split_json_frame():
 	async def chunks():
 		yield b'data: {"choices":[{"delta":'

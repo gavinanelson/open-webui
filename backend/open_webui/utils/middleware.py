@@ -764,6 +764,9 @@ async def iter_sse_events(body_iterator):
             return event
 
         if line.startswith(':'):
+            comment = line[1:].strip()
+            if comment:
+                return ('__sse_comment__', comment)
             return None
 
         field, _, value = line.partition(':')
@@ -4069,6 +4072,24 @@ async def streaming_chat_response_handler(response, ctx):
                             )
 
                     async for current_sse_event, data in iter_sse_events(response.body_iterator):
+                        if current_sse_event == '__sse_comment__':
+                            comment = data.strip().lower()
+                            if comment.startswith('keepalive'):
+                                await event_emitter(
+                                    {
+                                        'type': 'status',
+                                        'data': {
+                                            'action': 'stream_keepalive',
+                                            'description': 'Hermes is still working — waiting for the next update',
+                                            'done': False,
+                                            'source': 'hermes',
+                                            'event': 'sse.keepalive',
+                                            'received_at': time.time(),
+                                        },
+                                    }
+                                )
+                            continue
+
                         if not data.strip():
                             continue
 
