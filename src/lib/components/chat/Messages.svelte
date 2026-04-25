@@ -655,7 +655,6 @@
 					{#if messages.at(0)?.parentId !== null}
 						<Loader
 							on:visible={(e) => {
-								console.log('visible');
 								if (!messagesLoading) {
 									loadMoreMessages();
 								}
@@ -667,7 +666,13 @@
 							</div>
 						</Loader>
 					{/if}
-					<ul role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false">
+					<ul
+						class="messages-virtual-list"
+						role="log"
+						aria-live="polite"
+						aria-relevant="additions"
+						aria-atomic="false"
+					>
 						<!-- Top spacer: sum of cached heights for messages above visible range -->
 						{#if topSpacerHeight > 0}
 							<div style="height: {topSpacerHeight}px" aria-hidden="true" />
@@ -721,3 +726,9 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	.messages-virtual-list {
+		overflow-anchor: none;
+	}
+</style>
