@@ -83,6 +83,8 @@
 	let bottomSpacerHeight = 0;
 	let pendingCull = null;
 	let pendingVirtualizationRefresh = null;
+	let pendingInitialBottomScroll = null;
+	let initialBottomScrollDeadline = 0;
 	let touchStartY = 0;
 	let virtualizationLayout = {
 		messageIds: [],
@@ -155,6 +157,7 @@
 
 		if (event instanceof WheelEvent) {
 			if (event.deltaY < 0) {
+				stopInitialBottomScroll();
 				autoScroll = false;
 				return;
 			}
@@ -171,6 +174,7 @@
 		if (event.type === 'touchmove') {
 			const currentY = event.touches?.[0]?.clientY ?? touchStartY;
 			if (currentY > touchStartY) {
+				stopInitialBottomScroll();
 				autoScroll = false;
 				return;
 			}
@@ -209,6 +213,7 @@
 		cancelAnimationFrame(pendingCull);
 		cancelAnimationFrame(pendingRebuild);
 		cancelAnimationFrame(pendingVirtualizationRefresh);
+		cancelAnimationFrame(pendingInitialBottomScroll);
 	});
 
 	const loadMoreMessages = async () => {
@@ -302,7 +307,41 @@
 
 	$: handleHistoryChange(history.currentId, history.messages);
 
+	const stopInitialBottomScroll = () => {
+		initialBottomScrollDeadline = 0;
+		if (pendingInitialBottomScroll) {
+			cancelAnimationFrame(pendingInitialBottomScroll);
+			pendingInitialBottomScroll = null;
+		}
+	};
+
+	const keepInitialScrollAtBottom = () => {
+		pendingInitialBottomScroll = null;
+
+		if (!initialBottomScrollDeadline) {
+			return;
+		}
+
+		scrollToBottom();
+		updateVisibleRange();
+
+		if (Date.now() < initialBottomScrollDeadline) {
+			pendingInitialBottomScroll = requestAnimationFrame(keepInitialScrollAtBottom);
+		} else {
+			initialBottomScrollDeadline = 0;
+		}
+	};
+
+	const startInitialBottomScroll = () => {
+		initialBottomScrollDeadline = Date.now() + 900;
+
+		if (!pendingInitialBottomScroll) {
+			pendingInitialBottomScroll = requestAnimationFrame(keepInitialScrollAtBottom);
+		}
+	};
+
 	const scrollToBottomAfterRender = async () => {
+		startInitialBottomScroll();
 		await tick();
 		refreshVirtualization();
 		await tick();
@@ -334,6 +373,10 @@
 
 	const scrollToBottom = () => {
 		const element = document.getElementById('messages-container');
+		if (!element) {
+			return;
+		}
+
 		element.scrollTop = element.scrollHeight;
 	};
 
@@ -357,6 +400,9 @@
 		}
 
 		scheduleVirtualizationRefresh();
+		if (initialBottomScrollDeadline && autoScroll) {
+			startInitialBottomScroll();
+		}
 	};
 
 	const updateChat = async () => {
@@ -609,7 +655,6 @@
 					{#if messages.at(0)?.parentId !== null}
 						<Loader
 							on:visible={(e) => {
-								console.log('visible');
 								if (!messagesLoading) {
 									loadMoreMessages();
 								}
@@ -621,7 +666,13 @@
 							</div>
 						</Loader>
 					{/if}
-					<ul role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false">
+					<ul
+						class="messages-virtual-list"
+						role="log"
+						aria-live="polite"
+						aria-relevant="additions"
+						aria-atomic="false"
+					>
 						<!-- Top spacer: sum of cached heights for messages above visible range -->
 						{#if topSpacerHeight > 0}
 							<div style="height: {topSpacerHeight}px" aria-hidden="true" />
@@ -675,3 +726,9 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	.messages-virtual-list {
+		overflow-anchor: none;
+	}
+</style>

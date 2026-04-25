@@ -553,6 +553,7 @@ from open_webui.utils.embeddings import generate_embeddings
 from open_webui.utils.middleware import (
     build_hermes_status_payload,
     build_chat_response_context,
+    iter_sse_events,
     load_messages_from_db,
     process_messages_with_output,
     process_chat_payload,
@@ -1627,9 +1628,36 @@ def _is_native_hermes_model(request: Request, model_id: str | None):
 
 
 def _hermes_base_url_for_model(request: Request, model_id: str):
-    model = request.app.state.OPENAI_MODELS.get(model_id) if hasattr(request.app.state, 'OPENAI_MODELS') else None
+    model = (
+        request.app.state.OPENAI_MODELS.get(model_id)
+        if hasattr(request.app.state, 'OPENAI_MODELS')
+        else None
+    )
     url_idx = model.get('urlIdx') if model else 0
-    return request.app.state.config.OPENAI_API_BASE_URLS[url_idx].rstrip('/')
+    return request.app.state.config.OPENAI_API_BASE_URLS[url_idx].rstrip('/').removesuffix('/v1')
+
+
+def _clean_hermes_runtime_value(value):
+    if value is None:
+        return ''
+    return str(value).strip()
+
+
+def _extract_hermes_runtime(form_data: dict, metadata: dict) -> dict:
+    runtime = metadata.get('hermes_runtime') if isinstance(metadata.get('hermes_runtime'), dict) else {}
+    params = form_data.get('params') if isinstance(form_data.get('params'), dict) else {}
+
+    model = _clean_hermes_runtime_value(runtime.get('model'))
+    reasoning = _clean_hermes_runtime_value(
+        runtime.get('reasoning') or params.get('reasoning_effort') or params.get('think')
+    )
+    fast = _clean_hermes_runtime_value(runtime.get('fast') or params.get('service_tier') or params.get('speed'))
+
+    return {
+        **({'model': model} if model else {}),
+        **({'reasoning': reasoning} if reasoning else {}),
+        **({'fast': fast} if fast else {}),
+    }
 
 
 async def run_native_hermes_chat(request: Request, form_data: dict, metadata: dict):
@@ -1669,21 +1697,16 @@ async def run_native_hermes_chat(request: Request, form_data: dict, metadata: di
     content = ''
     usage = None
     run_id = None
-    hermes_runtime = metadata.get('hermes_runtime') if isinstance(metadata.get('hermes_runtime'), dict) else {}
     hermes_run_payload = {
         'input': user_input,
         'conversation_history': conversation_history,
         'session_id': metadata.get('chat_id') or metadata.get('session_id'),
     }
+    hermes_runtime = _extract_hermes_runtime(form_data, metadata)
     if hermes_runtime:
         # Structured runtime settings from the native Hermes composer controls.
         # These are intentionally not sent as slash-command chat text.
-        if hermes_runtime.get('model'):
-            hermes_run_payload['model'] = hermes_runtime.get('model')
-        if hermes_runtime.get('reasoning'):
-            hermes_run_payload['reasoning'] = hermes_runtime.get('reasoning')
-        if hermes_runtime.get('fast'):
-            hermes_run_payload['fast'] = hermes_runtime.get('fast')
+        hermes_run_payload.update(hermes_runtime)
 
     async with session.post(
         f'{base_url}/runs',
@@ -1717,17 +1740,13 @@ async def run_native_hermes_chat(request: Request, form_data: dict, metadata: di
                 error = await response.text()
             raise Exception(f'Hermes event stream failed: {error}')
 
-        async for raw_line in response.content:
-            line = raw_line.decode('utf-8', 'replace').strip()
-            if not line or line.startswith(':') or not line.startswith('data:'):
-                continue
-
+        async for sse_event_type, data in iter_sse_events(response.content):
             try:
-                event = json.loads(line[len('data:') :].strip())
+                event = json.loads(data)
             except Exception:
                 continue
 
-            event_type = event.get('event') or 'event'
+            event_type = event.get('event') or sse_event_type or 'event'
 
             if event_type == 'message.delta':
                 content += event.get('delta') or ''
@@ -2581,6 +2600,7 @@ async def get_app_version():
     return {
         'version': VERSION,
         'deployment_id': DEPLOYMENT_ID,
+        'build_hash': WEBUI_BUILD_HASH,
     }
 
 
