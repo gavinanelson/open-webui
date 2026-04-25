@@ -8,7 +8,7 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { goto, invalidate, invalidateAll } from '$app/navigation';
-	import { onMount, getContext, createEventDispatcher, tick } from 'svelte';
+	import { getContext, createEventDispatcher, onDestroy, tick } from 'svelte';
 	const i18n = getContext('i18n');
 
 	const dispatch = createEventDispatcher();
@@ -289,21 +289,24 @@
 		}
 	};
 
-	onMount(() => {
-		const el = itemElement;
-		if (!el) return;
+	let clickOutsideListenerAttached = false;
 
-		document.addEventListener('click', onClickOutside, true);
-		el.addEventListener('dragstart', onDragStart);
-		el.addEventListener('drag', onDrag);
-		el.addEventListener('dragend', onDragEndHandler);
+	$: {
+		if (typeof document !== 'undefined') {
+			if (confirmEdit && !clickOutsideListenerAttached) {
+				document.addEventListener('click', onClickOutside, true);
+				clickOutsideListenerAttached = true;
+			} else if (!confirmEdit && clickOutsideListenerAttached) {
+				document.removeEventListener('click', onClickOutside, true);
+				clickOutsideListenerAttached = false;
+			}
+		}
+	}
 
-		return () => {
+	onDestroy(() => {
+		if (clickOutsideListenerAttached) {
 			document.removeEventListener('click', onClickOutside, true);
-			el.removeEventListener('dragstart', onDragStart);
-			el.removeEventListener('drag', onDrag);
-			el.removeEventListener('dragend', onDragEndHandler);
-		};
+		}
 	});
 
 	let showDeleteConfirm = false;
@@ -402,11 +405,15 @@
 	</DragGhost>
 {/if}
 
+<!-- svelte-ignore a11y-no-static-element-interactions -->
 <div
 	id="sidebar-chat-group"
 	bind:this={itemElement}
 	class=" w-full {className} relative group"
 	draggable={!confirmEdit}
+	on:dragstart={onDragStart}
+	on:drag={onDrag}
+	on:dragend={onDragEndHandler}
 >
 	{#if confirmEdit}
 		<div

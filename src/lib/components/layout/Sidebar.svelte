@@ -91,6 +91,8 @@
 	// Pagination variables
 	let chatListLoading = false;
 	let allChatsLoaded = false;
+	let chatListRefreshRequestId = 0;
+	let pendingChatListRefreshRAF: number | null = null;
 
 	let showCreateFolderModal = false;
 
@@ -280,53 +282,66 @@
 	};
 
 	const initChatList = async () => {
+		const requestId = ++chatListRefreshRequestId;
+
 		// Reset pagination variables
-		console.log('initChatList');
 		currentChatPage.set(1);
 		allChatsLoaded = false;
 		scrollPaginationEnabled.set(false);
 
-		initFolders();
-		await Promise.all([
-			await (async () => {
-				console.log('Init tags');
-				const _tags = await getAllTags(localStorage.token);
-				tags.set(_tags);
-			})(),
-			await (async () => {
-				console.log('Init pinned chats');
-				const _pinnedChats = await getPinnedChatList(localStorage.token);
-				pinnedChats.set(_pinnedChats);
-			})(),
-			await (async () => {
+		const [, _tags, _pinnedChats, _pinnedNotes, _chats] = await Promise.all([
+			initFolders(),
+			getAllTags(localStorage.token).catch(() => []),
+			getPinnedChatList(localStorage.token).catch(() => []),
+			(async () => {
 				if (
 					$config?.features?.enable_notes &&
 					($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true))
 				) {
-					console.log('Init pinned notes');
-					const _pinnedNotes = await getPinnedNoteList(localStorage.token).catch(() => []);
-					pinnedNotes.set(_pinnedNotes);
+					return await getPinnedNoteList(localStorage.token).catch(() => []);
 				}
+				return $pinnedNotes ?? [];
 			})(),
-			await (async () => {
-				console.log('Init chat list');
-				const _chats = await getChatList(localStorage.token, $currentChatPage);
-				await chats.set(_chats);
-			})()
+			getChatList(localStorage.token, 1).catch(() => [])
 		]);
+
+		if (requestId !== chatListRefreshRequestId) {
+			return;
+		}
+
+		tags.set(_tags);
+		pinnedChats.set(_pinnedChats);
+		pinnedNotes.set(_pinnedNotes);
+		chats.set(_chats);
 
 		// Enable pagination
 		scrollPaginationEnabled.set(true);
 	};
 
+	const scheduleChatListRefresh = () => {
+		if (pendingChatListRefreshRAF !== null) {
+			return;
+		}
+
+		pendingChatListRefreshRAF = requestAnimationFrame(() => {
+			pendingChatListRefreshRAF = null;
+			initChatList();
+		});
+	};
+
 	const loadMoreChats = async () => {
+		if (chatListLoading || allChatsLoaded) {
+			return;
+		}
+
 		chatListLoading = true;
 
-		currentChatPage.set($currentChatPage + 1);
+		const nextPage = $currentChatPage + 1;
+		currentChatPage.set(nextPage);
 
 		let newChatList = [];
 
-		newChatList = await getChatList(localStorage.token, $currentChatPage);
+		newChatList = await getChatList(localStorage.token, nextPage);
 
 		// once the bottom of the list has been reached (no results) there is no need to continue querying
 		allChatsLoaded = newChatList.length === 0;
@@ -638,7 +653,7 @@
 				return newSet;
 			});
 		} else if (event.data?.type === 'chat:list') {
-			initChatList();
+			scheduleChatListRefresh();
 		}
 	};
 
@@ -685,6 +700,9 @@
 	onDestroy(() => {
 		if (scrollTopRAF !== null) {
 			cancelAnimationFrame(scrollTopRAF);
+		}
+		if (pendingChatListRefreshRAF !== null) {
+			cancelAnimationFrame(pendingChatListRefreshRAF);
 		}
 	});
 

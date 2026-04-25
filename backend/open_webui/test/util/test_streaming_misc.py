@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from open_webui.utils.middleware import flush_pending_stream_delta_data
 from open_webui.utils.misc import inject_image_file_parts, should_emit_stream_content_snapshot
+from open_webui.utils.middleware import flush_pending_stream_delta_data, iter_sse_events
 
 
 def test_should_emit_stream_content_snapshot_for_realtime_save():
@@ -142,3 +142,30 @@ async def test_flush_pending_stream_delta_data_skips_below_threshold():
 	event_emitter.assert_not_awaited()
 	assert delta_count == 1
 	assert last_delta_data == {'content': 'chunk-1'}
+
+
+@pytest.mark.asyncio
+async def test_iter_sse_events_handles_coalesced_frames():
+	async def chunks():
+		yield b'event: hermes.tool.progress\ndata: {"status":"running"}\n\n'
+		yield b'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n'
+
+	events = [event async for event in iter_sse_events(chunks())]
+
+	assert events == [
+		('hermes.tool.progress', '{"status":"running"}'),
+		(None, '{"choices":[{"delta":{"content":"hi"}}]}'),
+		(None, '[DONE]'),
+	]
+
+
+@pytest.mark.asyncio
+async def test_iter_sse_events_handles_split_json_frame():
+	async def chunks():
+		yield b'data: {"choices":[{"delta":'
+		yield b'{"content":"hel'
+		yield b'lo"}}]}\n\n'
+
+	events = [event async for event in iter_sse_events(chunks())]
+
+	assert events == [(None, '{"choices":[{"delta":{"content":"hello"}}]}')]

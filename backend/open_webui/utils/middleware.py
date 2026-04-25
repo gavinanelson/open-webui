@@ -237,6 +237,45 @@ logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
 
 
+def _chat_title_text(value: Any) -> str:
+    if value is None:
+        return ''
+
+    if isinstance(value, str):
+        return value.strip()
+
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get('text') or item.get('content')
+                if isinstance(text, str):
+                    parts.append(text)
+        return ' '.join(parts).strip()
+
+    return str(value).strip()
+
+
+def _fallback_chat_title(messages: list[dict], user_message: Any = None, max_length: int = 80) -> str:
+    title = ''
+    if messages:
+        title = _chat_title_text(messages[0].get('content'))
+
+    if not title:
+        title = _chat_title_text(user_message)
+
+    if not title:
+        return 'New Chat'
+
+    title = re.sub(r'\s+', ' ', title).strip()
+    if len(title) > max_length:
+        title = title[: max_length - 3].rstrip() + '...'
+
+    return title
+
+
 # We believe in one maker of all models, seen and unseen,
 # and in the reasoning which proceeds from the architect.
 # We look for the resurrection of dead processes and the
@@ -703,6 +742,63 @@ def deep_merge(target, source):
         return target + source
     else:
         return source
+
+
+async def iter_sse_events(body_iterator):
+    """Yield complete SSE events from arbitrary response chunks."""
+    buffer = ''
+    event_type = None
+    data_lines = []
+
+    def process_line(raw_line):
+        nonlocal event_type
+
+        line = raw_line.rstrip('\r')
+        if line == '':
+            if not data_lines:
+                return None
+
+            event = (event_type, '\n'.join(data_lines))
+            event_type = None
+            data_lines.clear()
+            return event
+
+        if line.startswith(':'):
+            return None
+
+        field, _, value = line.partition(':')
+        if value.startswith(' '):
+            value = value[1:]
+
+        if field == 'event':
+            event_type = value or None
+        elif field == 'data':
+            data_lines.append(value)
+
+        return None
+
+    async for chunk in body_iterator:
+        chunk = chunk.decode('utf-8', 'replace') if isinstance(chunk, bytes) else str(chunk)
+        buffer += chunk
+
+        while True:
+            newline_index = buffer.find('\n')
+            if newline_index == -1:
+                break
+
+            line = buffer[:newline_index]
+            buffer = buffer[newline_index + 1 :]
+            event = process_line(line)
+            if event is not None:
+                yield event
+
+    if buffer:
+        event = process_line(buffer)
+        if event is not None:
+            yield event
+
+    if data_lines:
+        yield event_type, '\n'.join(data_lines)
 
 
 def handle_responses_streaming_event(
@@ -3127,8 +3223,7 @@ async def background_tasks_handler(ctx):
             if not metadata.get('chat_id', '').startswith('local:'):  # Only update titles and tags for non-temp chats
                 if TASKS.TITLE_GENERATION in tasks:
                     user_message = get_last_user_message(messages)
-                    if user_message and len(user_message) > 100:
-                        user_message = user_message[:100] + '...'
+                    fallback_title = _fallback_chat_title(messages, user_message)
 
                     title = None
                     if tasks[TASKS.TITLE_GENERATION]:
@@ -3159,12 +3254,12 @@ async def background_tasks_handler(ctx):
                             title_string = title_string[title_string.find('{') : title_string.rfind('}') + 1]
 
                             try:
-                                title = json.loads(title_string).get('title', user_message)
-                            except Exception as e:
+                                title = _chat_title_text(json.loads(title_string).get('title'))
+                            except Exception:
                                 title = ''
 
                             if not title:
-                                title = messages[0].get('content', user_message)
+                                title = fallback_title
 
                             await Chats.update_chat_title_by_id(metadata['chat_id'], title)
 
@@ -3175,15 +3270,15 @@ async def background_tasks_handler(ctx):
                                 }
                             )
 
-                    if title == None and len(messages) == 2 and (not messages_map or len(messages_map) <= 2):
-                        title = messages[0].get('content', user_message)
+                    if title is None and len(messages) == 2 and (not messages_map or len(messages_map) <= 2):
+                        title = fallback_title
 
                         await Chats.update_chat_title_by_id(metadata['chat_id'], title)
 
                         await event_emitter(
                             {
                                 'type': 'chat:title',
-                                'data': message.get('content', user_message),
+                                'data': title,
                             }
                         )
 
@@ -3973,28 +4068,15 @@ async def streaming_chat_response_handler(response, ctx):
                                 }
                             )
 
-                    current_sse_event = None
-
-                    async for line in response.body_iterator:
-                        line = line.decode('utf-8', 'replace') if isinstance(line, bytes) else line
-                        data = line
-
+                    async for current_sse_event, data in iter_sse_events(response.body_iterator):
                         if not data.strip():
                             continue
 
-                        # Capture custom SSE event types (for example hermes.tool.progress)
-                        if data.startswith('event:'):
-                            current_sse_event = data[len('event:') :].strip() or None
-                            continue
-
-                        # "data:" is the prefix for each event
-                        if not data.startswith('data:'):
-                            continue
-
-                        # Remove the prefix
-                        data = data[len('data:') :].strip()
-
                         try:
+                            done = data.strip() == '[DONE]'
+                            if done:
+                                break
+
                             data = json.loads(data)
 
                             if is_hermes_status_event(current_sse_event):
@@ -4004,7 +4086,6 @@ async def streaming_chat_response_handler(response, ctx):
                                         'data': build_hermes_status_payload(data, current_sse_event),
                                     }
                                 )
-                                current_sse_event = None
                                 continue
 
                             data, _ = await process_filter_functions(
@@ -4187,6 +4268,10 @@ async def streaming_chat_response_handler(response, ctx):
 
                                                 if current_response_tool_call is None:
                                                     # Add the new tool call
+                                                    delta_tool_call.setdefault(
+                                                        'id',
+                                                        f'call_{uuid4().hex[:24]}',
+                                                    )
                                                     delta_tool_call.setdefault('function', {})
                                                     delta_tool_call['function'].setdefault('name', '')
                                                     delta_tool_call['function'].setdefault('arguments', '')
@@ -4526,7 +4611,7 @@ async def streaming_chat_response_handler(response, ctx):
                                         }
                                     )
                         except Exception as e:
-                            done = 'data: [DONE]' in line
+                            done = data.strip() == '[DONE]'
                             if done:
                                 pass
                             else:

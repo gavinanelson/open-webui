@@ -47,6 +47,7 @@
 		fast: '',
 		fastLabel: 'Mode'
 	};
+	export let isHermesRuntimeSelected = false;
 
 	export let history;
 
@@ -222,6 +223,7 @@
 					{history}
 					bind:selectedModels
 					bind:hermesRuntime
+					{isHermesRuntimeSelected}
 					bind:files
 					bind:prompt
 					bind:autoScroll
