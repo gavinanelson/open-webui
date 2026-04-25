@@ -21,6 +21,27 @@
 	type HermesRuntimeOption = {
 		label: string;
 		value: string;
+		description?: string;
+	};
+	type HermesCommand = {
+		name: string;
+		label: string;
+		ui?: string;
+		args_hint?: string;
+		aliases?: string[];
+		subcommands?: string[];
+	};
+	type HermesCommandGroup = {
+		category: string;
+		commands: HermesCommand[];
+	};
+	type HermesComposerCommand = {
+		command: string;
+		insertText?: string;
+		description: string;
+		ui?: string;
+		aliases?: string[];
+		subcommands?: string[];
 	};
 
 	import {
@@ -58,7 +79,7 @@
 	} from '$lib/utils';
 	import { uploadFile } from '$lib/apis/files';
 	import { generateAutoCompletion } from '$lib/apis';
-	import { getHermesRuntimeOptions } from '$lib/apis/hermes';
+	import { getHermesCommands, getHermesRuntimeOptions } from '$lib/apis/hermes';
 	import { deleteFileById } from '$lib/apis/files';
 	import { getChatById } from '$lib/apis/chats';
 	import { getSessionUser } from '$lib/apis/auths';
@@ -100,6 +121,8 @@
 	import Knobs from '../icons/Knobs.svelte';
 	import ValvesModal from '../workspace/common/ValvesModal.svelte';
 	import Note from '../icons/Note.svelte';
+	import Check from '../icons/Check.svelte';
+	import ChevronUpDown from '../icons/ChevronUpDown.svelte';
 	import { goto } from '$app/navigation';
 	import InputModal from '../common/InputModal.svelte';
 	import Expand from '../icons/Expand.svelte';
@@ -128,6 +151,7 @@
 		fast: '',
 		fastLabel: 'Mode'
 	};
+	export let isHermesRuntimeSelected = false;
 
 	let selectedModelIds = [];
 	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
@@ -136,11 +160,26 @@
 	let hermesFastMode = hermesRuntime.fastLabel;
 	let hermesRuntimeOptionsLoaded = false;
 
+	const reasoningOptionsForModel = (modelValue: string) =>
+		HERMES_REASONING_LEVELS_BY_MODEL[modelValue] ?? HERMES_REASONING_LEVELS;
+
 	const selectHermesModel = async (model: HermesRuntimeOption) => {
+		const reasoningOptions = reasoningOptionsForModel(model.value);
+		const currentReasoning = reasoningOptions.find(
+			(option) => option.value === hermesRuntime.reasoning
+		);
+		const nextReasoning = currentReasoning ?? reasoningOptions[0];
+
 		hermesRuntime = {
 			...hermesRuntime,
 			model: model.value,
-			modelLabel: model.label
+			modelLabel: model.label,
+			...(nextReasoning
+				? {
+						reasoning: nextReasoning.value,
+						reasoningLabel: nextReasoning.label
+					}
+				: {})
 		};
 		dispatch('hermes-runtime-change', hermesRuntime);
 	};
@@ -167,13 +206,21 @@
 	$: hermesReasoning = hermesRuntime.reasoningLabel;
 	$: hermesFastMode = hermesRuntime.fastLabel;
 
-	const normalizeHermesOptions = (options: any[] = []) =>
+	const normalizeHermesOptions = (options: any[] = [], allowEmptyValue = false) =>
 		options
 			.map((option) => ({
 				value: String(option?.value ?? '').trim(),
-				label: String(option?.label ?? option?.name ?? option?.value ?? '').trim()
+				label: String(option?.label ?? option?.name ?? option?.value ?? '').trim(),
+				description: String(option?.description ?? '').trim()
 			}))
-			.filter((option) => option.value && option.label);
+			.filter((option) => (allowEmptyValue || option.value) && option.label);
+
+	const normalizeReasoningOptionsByModel = (optionsByModel: Record<string, any[]> = {}) =>
+		Object.fromEntries(
+			Object.entries(optionsByModel)
+				.map(([model, options]) => [model, normalizeHermesOptions(options, true)])
+				.filter(([_model, options]) => options.length > 0)
+		);
 
 	const loadHermesRuntimeOptions = async () => {
 		if (!localStorage.token) {
@@ -189,12 +236,16 @@
 		}
 
 		HERMES_RUNTIME_MODELS = normalizeHermesOptions(runtimeOptions.model_options);
-		HERMES_REASONING_LEVELS = normalizeHermesOptions(runtimeOptions.reasoning_options);
+		HERMES_REASONING_LEVELS = normalizeHermesOptions(runtimeOptions.reasoning_options, true);
+		HERMES_REASONING_LEVELS_BY_MODEL = normalizeReasoningOptionsByModel(
+			runtimeOptions.reasoning_options_by_model
+		);
 		HERMES_FAST_MODES = normalizeHermesOptions(runtimeOptions.fast_options);
 
 		const current = runtimeOptions.current ?? {};
 		const currentModel = HERMES_RUNTIME_MODELS.find((option) => option.value === current.model);
-		const currentReasoning = HERMES_REASONING_LEVELS.find(
+		const currentReasoningOptions = reasoningOptionsForModel(currentModel?.value ?? current.model);
+		const currentReasoning = currentReasoningOptions.find(
 			(option) => option.value === current.reasoning
 		);
 		const currentFast = HERMES_FAST_MODES.find((option) => option.value === current.fast);
@@ -216,14 +267,19 @@
 
 	let HERMES_RUNTIME_MODELS: HermesRuntimeOption[] = [];
 	let HERMES_REASONING_LEVELS: HermesRuntimeOption[] = [];
+	let HERMES_REASONING_LEVELS_BY_MODEL: Record<string, HermesRuntimeOption[]> = {};
 	let HERMES_FAST_MODES: HermesRuntimeOption[] = [];
+	let hermesModelSearch = '';
+	$: filteredHermesRuntimeModels = HERMES_RUNTIME_MODELS.filter((model) =>
+		`${model.label} ${model.value}`.toLowerCase().includes(hermesModelSearch.trim().toLowerCase())
+	);
+	$: filteredHermesReasoningLevels = reasoningOptionsForModel(hermesRuntime.model);
 
-	const HERMES_COMMAND_GROUPS = [
+	let HERMES_COMMAND_GROUPS: { label: string; commands: HermesComposerCommand[] }[] = [
 		{
-			label: 'Model',
+			label: 'Configuration',
 			commands: [
 				{ command: '/model ', description: 'Switch Hermes model for this session' },
-				{ command: '/provider', description: 'Show Hermes providers' },
 				{ command: '/fast on', description: 'Enable Hermes fast mode' },
 				{ command: '/fast off', description: 'Disable Hermes fast mode' },
 				{ command: '/reasoning ', description: 'Set reasoning effort/display' }
@@ -250,6 +306,52 @@
 			]
 		}
 	];
+
+	const normalizeHermesCommandGroups = (
+		groups: HermesCommandGroup[] = []
+	): { label: string; commands: HermesComposerCommand[] }[] =>
+		groups
+			.map((group) => ({
+				label: String(group?.category ?? '').trim(),
+				commands: (group?.commands ?? [])
+					.map((command) => {
+						const name = String(command?.name ?? '').trim();
+						const argsHint = String(command?.args_hint ?? '').trim();
+						if (!name) {
+							return null;
+						}
+						return {
+							command: `/${name}${argsHint ? ` ${argsHint}` : ''}`,
+							insertText: `/${name}${argsHint ? ' ' : ''}`,
+							description: String(command?.label ?? name).trim(),
+							ui: command?.ui,
+							aliases: command?.aliases ?? [],
+							subcommands: command?.subcommands ?? []
+						};
+					})
+					.filter(Boolean) as HermesComposerCommand[]
+			}))
+			.filter((group) => group.label && group.commands.length > 0);
+
+	const loadHermesCommands = async () => {
+		if (!localStorage.token) {
+			return;
+		}
+
+		const commandsPayload = await getHermesCommands(localStorage.token).catch((error) => {
+			console.error(error);
+			return null;
+		});
+
+		if (!commandsPayload?.commands) {
+			return;
+		}
+
+		const commandGroups = normalizeHermesCommandGroups(commandsPayload.commands);
+		if (commandGroups.length > 0) {
+			HERMES_COMMAND_GROUPS = commandGroups;
+		}
+	};
 
 	export let history;
 	export let taskIds = null;
@@ -309,10 +411,166 @@
 			}),
 		selectedToolIds,
 		selectedFilterIds,
+		hermesRuntime,
 		imageGenerationEnabled,
 		webSearchEnabled,
 		codeInterpreterEnabled
 	});
+
+	const normalizeRuntimeLookup = (value: string) =>
+		String(value ?? '')
+			.trim()
+			.toLowerCase()
+			.replace(/[\s_]+/g, '-');
+
+	const findHermesRuntimeOption = (options: HermesRuntimeOption[], value: string) => {
+		const normalized = normalizeRuntimeLookup(value);
+		if (!normalized) {
+			return null;
+		}
+
+		return (
+			options.find(
+				(option) =>
+					normalizeRuntimeLookup(option.value) === normalized ||
+					normalizeRuntimeLookup(option.label) === normalized
+			) ??
+			options.find(
+				(option) =>
+					normalizeRuntimeLookup(option.value).includes(normalized) ||
+					normalizeRuntimeLookup(option.label).includes(normalized)
+			) ??
+			null
+		);
+	};
+
+	const setPromptText = async (text: string) => {
+		prompt = text;
+		chatInputElement?.setText(text);
+		await tick();
+		document.getElementById('chat-input')?.focus();
+	};
+
+	const knownHermesCommand = (name: string) => {
+		const normalized = normalizeRuntimeLookup(name);
+		return HERMES_COMMAND_GROUPS.some((group) =>
+			group.commands.some((command) => {
+				const commandName = normalizeRuntimeLookup(
+					command.command.replace(/^\//, '').split(/\s+/)[0] ?? ''
+				);
+				const aliases = command.aliases ?? [];
+				return (
+					commandName === normalized ||
+					aliases.some((alias) => normalizeRuntimeLookup(alias) === normalized)
+				);
+			})
+		);
+	};
+
+	const handleHermesRuntimeCommand = async (text: string) => {
+		if (!isHermesRuntimeSelected || files.length > 0) {
+			return false;
+		}
+
+		const trimmed = text.trim();
+		if (!trimmed.startsWith('/')) {
+			return false;
+		}
+
+		const [rawCommand = '', ...args] = trimmed.slice(1).split(/\s+/);
+		const command = normalizeRuntimeLookup(rawCommand);
+		const value = args.join(' ').trim();
+
+		if (command === 'model') {
+			const model = findHermesRuntimeOption(HERMES_RUNTIME_MODELS, value);
+			if (!model) {
+				toast.error(value ? `Unknown Hermes model: ${value}` : 'Choose a Hermes model first.');
+				return true;
+			}
+
+			await selectHermesModel(model);
+			await setPromptText('');
+			toast.success(`Hermes model set to ${model.label}`);
+			return true;
+		}
+
+		if (command === 'reasoning') {
+			if (['show', 'hide', 'on', 'off'].includes(normalizeRuntimeLookup(value))) {
+				toast.info(
+					'Reasoning display controls are tracked by Hermes, but this web harness maps reasoning effort only.'
+				);
+				await setPromptText('');
+				return true;
+			}
+
+			const reasoning = findHermesRuntimeOption(filteredHermesReasoningLevels, value);
+			if (!reasoning) {
+				toast.error(
+					value ? `Unknown reasoning level: ${value}` : 'Choose a reasoning level first.'
+				);
+				return true;
+			}
+
+			await selectHermesReasoning(reasoning);
+			await setPromptText('');
+			toast.success(`Hermes reasoning set to ${reasoning.label}`);
+			return true;
+		}
+
+		if (command === 'fast') {
+			const normalizedValue = normalizeRuntimeLookup(value || 'status');
+			if (normalizedValue === 'status') {
+				toast.info(`Hermes fast mode: ${hermesFastMode}`);
+				await setPromptText('');
+				return true;
+			}
+
+			const targetValue = ['on', 'fast', 'priority'].includes(normalizedValue)
+				? 'fast'
+				: ['off', 'normal'].includes(normalizedValue)
+					? 'normal'
+					: '';
+			if (!targetValue) {
+				toast.error(`Unknown fast mode: ${value}`);
+				return true;
+			}
+			const mode =
+				findHermesRuntimeOption(HERMES_FAST_MODES, targetValue) ??
+				findHermesRuntimeOption(HERMES_FAST_MODES, normalizedValue);
+			if (!mode) {
+				toast.error(`Unknown fast mode: ${value}`);
+				return true;
+			}
+
+			await selectHermesFastMode(mode);
+			await setPromptText('');
+			toast.success(`Hermes mode set to ${mode.label}`);
+			return true;
+		}
+
+		if (['commands', 'help'].includes(command)) {
+			toast.info('Open the Hermes menu in the composer to browse commands.');
+			await setPromptText('');
+			return true;
+		}
+
+		if (knownHermesCommand(command)) {
+			toast.info(
+				'This Hermes command is known, but direct command execution is not exposed by the Hermes API server yet.'
+			);
+			return true;
+		}
+
+		return false;
+	};
+
+	const submitPrompt = async () => {
+		if (await handleHermesRuntimeCommand(prompt)) {
+			return;
+		}
+
+		dispatch('submit', prompt);
+	};
 
 	const inputVariableHandler = async (text: string): Promise<string> => {
 		inputVariables = extractInputVariables(text);
@@ -1057,6 +1315,7 @@
 
 	onMount(() => {
 		loadHermesRuntimeOptions();
+		loadHermesCommands();
 
 		suggestions = [
 			{
@@ -1372,7 +1631,7 @@
 								document.getElementById('chat-input')?.focus();
 
 								if ($settings?.speechAutoSend ?? false) {
-									dispatch('submit', prompt);
+									submitPrompt();
 								}
 							}}
 						/>
@@ -1381,7 +1640,7 @@
 						class="w-full flex flex-col gap-1.5 {recording ? 'hidden' : ''}"
 						on:submit|preventDefault={() => {
 							// check if selectedModels support image input
-							dispatch('submit', prompt);
+							submitPrompt();
 						}}
 					>
 						<button
@@ -1677,7 +1936,7 @@
 																if (enterPressed) {
 																	e.preventDefault();
 																	if (prompt !== '' || files.length > 0) {
-																		dispatch('submit', prompt);
+																		submitPrompt();
 																	}
 																}
 															}
@@ -1803,167 +2062,178 @@
 										class="hidden self-center w-[1px] h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50 @md:block"
 									/>
 
-									<div
-										class="hidden min-w-0 items-center gap-0.5 overflow-hidden text-gray-500 dark:text-gray-400 @md:flex"
-									>
-										<Dropdown
-											side="top"
-											align="start"
-											contentClass="w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-1.5 shadow-lg dark:border-gray-800 dark:bg-gray-900"
+									{#if isHermesRuntimeSelected}
+										<div
+											class="hidden min-w-0 items-center gap-0.5 overflow-hidden text-gray-500 dark:text-gray-400 @md:flex"
 										>
-											<Tooltip content="Hermes runtime model">
-												<button type="button" class={compactSelectorClass}>
-													<span class="line-clamp-1">{hermesRuntimeModel}</span>
-													<span class="text-[10px] text-gray-400">v</span>
-												</button>
-											</Tooltip>
+											<Dropdown
+												side="top"
+												align="start"
+												contentClass="w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-1.5 shadow-lg dark:border-gray-800 dark:bg-gray-900"
+											>
+												<Tooltip content="Hermes runtime model">
+													<button type="button" class={compactSelectorClass}>
+														<span class="line-clamp-1">{hermesRuntimeModel}</span>
+														<ChevronUpDown
+															className="size-3 shrink-0 text-gray-400"
+															strokeWidth="2"
+														/>
+													</button>
+												</Tooltip>
 
-											<div slot="content" class="overflow-hidden">
-												<div class="border-b border-gray-100 px-3 py-2 dark:border-gray-800">
-													<div class="text-sm font-medium text-gray-900 dark:text-gray-100">
-														Codex
-													</div>
-												</div>
-												<div class="p-1.5">
-													<div
-														class="mb-1 rounded-lg border border-gray-100 px-2 py-1.5 text-sm text-gray-500 dark:border-gray-800 dark:text-gray-500"
-													>
-														Search models...
-													</div>
-												</div>
-												<div class="max-h-72 overflow-y-auto px-1.5 pb-1.5">
-													{#if HERMES_RUNTIME_MODELS.length > 0}
-														{#each HERMES_RUNTIME_MODELS as model, modelIndex (model.value)}
-															<button
-																type="button"
-																class="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left transition {hermesRuntimeModel ===
-																model.label
-																	? 'bg-blue-50 text-gray-900 dark:bg-blue-500/20 dark:text-gray-50'
-																	: 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-850'}"
-																on:click={() => selectHermesModel(model)}
-															>
-																<span class="flex min-w-0 items-center gap-2">
-																	<span class="w-3 text-gray-400">
-																		{hermesRuntimeModel === model.label ? '*' : ''}
-																	</span>
-																	<span class="line-clamp-1 text-sm">{model.label}</span>
-																</span>
-																<span
-																	class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-																>
-																	Ctrl+{modelIndex + 1}
-																</span>
-															</button>
-														{/each}
-													{:else}
-														<div class="px-2 py-6 text-center text-sm text-gray-500">
-															{hermesRuntimeOptionsLoaded
-																? 'No Hermes models exposed'
-																: 'Loading Hermes models...'}
+												<div slot="content" class="overflow-hidden">
+													<div class="border-b border-gray-100 px-3 py-2 dark:border-gray-800">
+														<div class="text-sm font-medium text-gray-900 dark:text-gray-100">
+															Hermes Runtime
 														</div>
-													{/if}
-												</div>
-											</div>
-										</Dropdown>
-
-										<div class="self-center w-px h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50" />
-
-										<Dropdown
-											side="top"
-											align="start"
-											contentClass="w-44 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-2 shadow-lg dark:border-gray-800 dark:bg-gray-900"
-										>
-											<Tooltip content="Reasoning and fast mode">
-												<button type="button" class={compactSelectorClass}>
-													<span class="line-clamp-1">{hermesReasoning} · {hermesFastMode}</span>
-													<span class="text-[10px] text-gray-400">v</span>
-												</button>
-											</Tooltip>
-
-											<div slot="content" class="space-y-2">
-												<div>
-													<div class="px-1.5 pb-1 text-[11px] text-gray-500 dark:text-gray-400">
-														Reasoning
 													</div>
-													<div class="space-y-0.5">
-														{#each HERMES_REASONING_LEVELS as reasoning}
-															<button
-																type="button"
-																class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"
-																on:click={() => selectHermesReasoning(reasoning)}
-															>
-																<span class="w-3 text-gray-600 dark:text-gray-300">
-																	{hermesReasoning === reasoning.label ? '✓' : ''}
-																</span>
-																<span>{reasoning.label}</span>
-															</button>
-														{/each}
+													<div class="p-1.5">
+														<input
+															class="mb-1 w-full rounded-lg border border-gray-100 bg-transparent px-2 py-1.5 text-sm text-gray-700 outline-none placeholder:text-gray-400 dark:border-gray-800 dark:text-gray-200"
+															placeholder="Search models"
+															bind:value={hermesModelSearch}
+														/>
 													</div>
-												</div>
-
-												<div class="border-t border-gray-100 pt-2 dark:border-gray-800">
-													<div class="px-1.5 pb-1 text-[11px] text-gray-500 dark:text-gray-400">
-														Fast Mode
-													</div>
-													<div class="space-y-0.5">
-														{#each HERMES_FAST_MODES as mode}
-															<button
-																type="button"
-																class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"
-																on:click={() => selectHermesFastMode(mode)}
-															>
-																<span class="w-3 text-gray-600 dark:text-gray-300">
-																	{hermesFastMode === mode.label ? '✓' : ''}
-																</span>
-																<span>{mode.label}</span>
-															</button>
-														{/each}
-													</div>
-												</div>
-											</div>
-										</Dropdown>
-
-										<div class="self-center w-px h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50" />
-
-										<Dropdown
-											side="top"
-											align="start"
-											contentClass="w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-2 shadow-lg dark:border-gray-800 dark:bg-gray-900"
-										>
-											<Tooltip content="Hermes command groups">
-												<button type="button" class={compactSelectorClass}>
-													<span>Hermes</span>
-													<span class="text-[10px] text-gray-400">v</span>
-												</button>
-											</Tooltip>
-
-											<div slot="content" class="space-y-2">
-												{#each HERMES_COMMAND_GROUPS as group}
-													<div>
-														<div class="px-2 pb-1 text-[11px] font-semibold text-gray-400">
-															{group.label}
-														</div>
-														<div class="space-y-0.5">
-															{#each group.commands as item}
+													<div class="max-h-72 overflow-y-auto px-1.5 pb-1.5">
+														{#if filteredHermesRuntimeModels.length > 0}
+															{#each filteredHermesRuntimeModels as model (model.value)}
 																<button
 																	type="button"
-																	class="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-gray-50 dark:hover:bg-gray-850"
-																	on:click={() => insertTextAtCursor(item.command)}
+																	class="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition {hermesRuntimeModel ===
+																	model.label
+																		? 'bg-blue-50 text-gray-900 dark:bg-blue-500/20 dark:text-gray-50'
+																		: 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-850'}"
+																	on:click={() => selectHermesModel(model)}
 																>
-																	<div class="font-mono text-xs text-gray-700 dark:text-gray-200">
-																		{item.command}
-																	</div>
-																	<div class="line-clamp-1 text-[11px] text-gray-400">
-																		{item.description}
-																	</div>
+																	<span class="flex min-w-0 items-center gap-2">
+																		<span
+																			class="flex size-3 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
+																		>
+																			{#if hermesRuntimeModel === model.label}
+																				<Check className="size-3" strokeWidth="2.4" />
+																			{/if}
+																		</span>
+																		<span class="line-clamp-1 text-sm">{model.label}</span>
+																	</span>
+																</button>
+															{/each}
+														{:else}
+															<div class="px-2 py-6 text-center text-sm text-gray-500">
+																{hermesRuntimeOptionsLoaded
+																	? 'No matching Hermes models'
+																	: 'Loading Hermes models...'}
+															</div>
+														{/if}
+													</div>
+												</div>
+											</Dropdown>
+
+											<div class="self-center w-px h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50" />
+
+											<Dropdown
+												side="top"
+												align="start"
+												contentClass="w-44 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-2 shadow-lg dark:border-gray-800 dark:bg-gray-900"
+											>
+												<Tooltip content="Reasoning and fast mode">
+													<button type="button" class={compactSelectorClass}>
+														<span class="line-clamp-1">{hermesReasoning} · {hermesFastMode}</span>
+														<ChevronUpDown
+															className="size-3 shrink-0 text-gray-400"
+															strokeWidth="2"
+														/>
+													</button>
+												</Tooltip>
+
+												<div slot="content" class="space-y-2">
+													<div>
+														<div class="px-1.5 pb-1 text-[11px] text-gray-500 dark:text-gray-400">
+															Reasoning
+														</div>
+														<div class="space-y-0.5">
+															{#each filteredHermesReasoningLevels as reasoning}
+																<button
+																	type="button"
+																	class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"
+																	on:click={() => selectHermesReasoning(reasoning)}
+																>
+																	<span class="w-3 text-gray-600 dark:text-gray-300">
+																		{hermesReasoning === reasoning.label ? '✓' : ''}
+																	</span>
+																	<span>{reasoning.label}</span>
 																</button>
 															{/each}
 														</div>
 													</div>
-												{/each}
-											</div>
-										</Dropdown>
-									</div>
+
+													<div class="border-t border-gray-100 pt-2 dark:border-gray-800">
+														<div class="px-1.5 pb-1 text-[11px] text-gray-500 dark:text-gray-400">
+															Fast Mode
+														</div>
+														<div class="space-y-0.5">
+															{#each HERMES_FAST_MODES as mode}
+																<button
+																	type="button"
+																	class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition hover:bg-gray-50 dark:hover:bg-gray-850"
+																	on:click={() => selectHermesFastMode(mode)}
+																>
+																	<span class="w-3 text-gray-600 dark:text-gray-300">
+																		{hermesFastMode === mode.label ? '✓' : ''}
+																	</span>
+																	<span>{mode.label}</span>
+																</button>
+															{/each}
+														</div>
+													</div>
+												</div>
+											</Dropdown>
+
+											<div class="self-center w-px h-4 mx-1 bg-gray-200/50 dark:bg-gray-800/50" />
+
+											<Dropdown
+												side="top"
+												align="start"
+												contentClass="w-80 max-w-[calc(100vw-1rem)] rounded-xl border border-gray-100 bg-white p-2 shadow-lg dark:border-gray-800 dark:bg-gray-900"
+											>
+												<Tooltip content="Hermes command groups">
+													<button type="button" class={compactSelectorClass}>
+														<span>Hermes</span>
+														<ChevronUpDown
+															className="size-3 shrink-0 text-gray-400"
+															strokeWidth="2"
+														/>
+													</button>
+												</Tooltip>
+
+												<div slot="content" class="space-y-2">
+													{#each HERMES_COMMAND_GROUPS as group}
+														<div>
+															<div class="px-2 pb-1 text-[11px] font-semibold text-gray-400">
+																{group.label}
+															</div>
+															<div class="space-y-0.5">
+																{#each group.commands as item}
+																	<button
+																		type="button"
+																		class="w-full rounded-lg px-2 py-1.5 text-left transition hover:bg-gray-50 dark:hover:bg-gray-850"
+																		on:click={() =>
+																			insertTextAtCursor(item.insertText ?? item.command)}
+																	>
+																		<div class="font-mono text-xs text-gray-700 dark:text-gray-200">
+																			{item.command}
+																		</div>
+																		<div class="line-clamp-1 text-[11px] text-gray-400">
+																			{item.description}
+																		</div>
+																	</button>
+																{/each}
+															</div>
+														</div>
+													{/each}
+												</div>
+											</Dropdown>
+										</div>
+									{/if}
 
 									{#if showWebSearchButton || showImageGenerationButton || showCodeInterpreterButton || showToolsButton || (toggleFilters && toggleFilters.length > 0)}
 										<div

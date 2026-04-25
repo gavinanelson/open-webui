@@ -28,7 +28,7 @@
 	import { capitalizeFirstLetter, sanitizeResponseContent, splitStream } from '$lib/utils';
 	import { getModels } from '$lib/apis';
 
-	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
+	import ChevronUpDown from '$lib/components/icons/ChevronUpDown.svelte';
 	import Check from '$lib/components/icons/Check.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -535,7 +535,7 @@
 			{:else}
 				{placeholder}
 			{/if}
-			<ChevronDown className=" self-center ml-2 size-3" strokeWidth="2.5" />
+			<ChevronUpDown className="self-center ml-2 size-3.5 text-gray-400" strokeWidth="2" />
 		</div>
 	</button>
 

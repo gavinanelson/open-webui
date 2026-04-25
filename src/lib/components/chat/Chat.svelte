@@ -91,6 +91,7 @@
 	} from '$lib/apis';
 	import { getTools } from '$lib/apis/tools';
 	import { uploadFile } from '$lib/apis/files';
+	import { getHermesRuntimeOptions } from '$lib/apis/hermes';
 	import { createOpenAITextStream } from '$lib/apis/streaming';
 	import { getFunctions } from '$lib/apis/functions';
 	import { updateFolderById } from '$lib/apis/folders';
@@ -146,11 +147,30 @@
 		fast: '',
 		fastLabel: 'Mode'
 	};
+	let hermesProfileIds: string[] = [];
 	$: if (atSelectedModel !== undefined) {
 		selectedModelIds = [atSelectedModel.id];
 	} else {
 		selectedModelIds = selectedModels;
 	}
+	const loadHermesProfiles = async () => {
+		if (!localStorage.token) {
+			return;
+		}
+
+		const runtimeOptions = await getHermesRuntimeOptions(localStorage.token).catch((error) => {
+			console.error(error);
+			return null;
+		});
+
+		hermesProfileIds = (runtimeOptions?.profile_ids ?? [])
+			.map((id) => String(id ?? '').trim())
+			.filter(Boolean);
+	};
+	$: isHermesRuntimeSelected =
+		selectedModelIds.length > 0 &&
+		hermesProfileIds.length > 0 &&
+		selectedModelIds.every((id) => hermesProfileIds.includes(id));
 
 	let selectedToolIds = [];
 	let selectedFilterIds = [];
@@ -176,6 +196,7 @@
 		currentId: null
 	};
 
+	let navigationRequestId = 0;
 	let taskIds = null;
 
 	// Chat Input
@@ -189,9 +210,12 @@
 	}
 
 	const navigateHandler = async () => {
+		const requestedChatId = chatIdProp;
+		const requestId = ++navigationRequestId;
+
 		// Mark the outgoing chat as read before loading the new one.
 		// $chatId still holds the previous chat here — loadChat() updates it.
-		if ($chatId && $chatId !== chatIdProp && !$temporaryChatEnabled) {
+		if ($chatId && $chatId !== requestedChatId && !$temporaryChatEnabled) {
 			updateLastReadAt($chatId);
 		}
 
@@ -203,30 +227,45 @@
 		files = [];
 		selectedToolIds = [];
 		selectedFilterIds = [];
+		taskIds = null;
 		webSearchEnabled = false;
 		imageGenerationEnabled = false;
 
 		const storageChatInput = sessionStorage.getItem(
-			`chat-input${chatIdProp ? `-${chatIdProp}` : ''}`
+			`chat-input${requestedChatId ? `-${requestedChatId}` : ''}`
 		);
 
-		if (chatIdProp && (await loadChat())) {
+		const loaded = requestedChatId ? await loadChat(requestedChatId, requestId) : false;
+		if (requestId !== navigationRequestId) {
+			return;
+		}
+
+		if (loaded) {
 			await tick();
+			if (requestId !== navigationRequestId) {
+				return;
+			}
 			loading = false;
 			window.setTimeout(() => scrollToBottom(), 0);
 
 			await tick();
+			if (requestId !== navigationRequestId) {
+				return;
+			}
 
 			// Mark chat read when initially loading it
-			if (chatIdProp && !$temporaryChatEnabled) {
-				updateLastReadAt(chatIdProp);
+			if (requestedChatId && !$temporaryChatEnabled) {
+				updateLastReadAt(requestedChatId);
 			}
 
 			// Process any queued requests if the chat is idle
 			const lastMessage = history.currentId ? history.messages[history.currentId] : null;
 			const isIdle = !lastMessage || lastMessage.role !== 'assistant' || lastMessage.done;
 			if (isIdle) {
-				await processNextInQueue(chatIdProp);
+				await processNextInQueue(requestedChatId);
+			}
+			if (requestId !== navigationRequestId) {
+				return;
 			}
 
 			if (storageChatInput) {
@@ -238,6 +277,7 @@
 						files = input.files;
 						selectedToolIds = input.selectedToolIds;
 						selectedFilterIds = input.selectedFilterIds;
+						hermesRuntime = input.hermesRuntime ?? hermesRuntime;
 						webSearchEnabled = input.webSearchEnabled;
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeInterpreterEnabled = input.codeInterpreterEnabled;
@@ -749,6 +789,7 @@
 	onMount(() => {
 		loading = true;
 		console.log('mounted');
+		loadHermesProfiles();
 		window.addEventListener('message', onMessageHandler);
 		$socket?.on('events', chatEventHandler);
 
@@ -843,6 +884,7 @@
 						files = input.files;
 						selectedToolIds = input.selectedToolIds;
 						selectedFilterIds = input.selectedFilterIds;
+						hermesRuntime = input.hermesRuntime ?? hermesRuntime;
 						webSearchEnabled = input.webSearchEnabled;
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeInterpreterEnabled = input.codeInterpreterEnabled;
@@ -1361,28 +1403,39 @@
 		setTimeout(() => chatInput?.focus(), 0);
 	};
 
-	const loadChat = async () => {
-		chatId.set(chatIdProp);
+	const loadChat = async (requestedChatId = chatIdProp, requestId = navigationRequestId) => {
+		chatId.set(requestedChatId);
 
 		if ($temporaryChatEnabled) {
 			temporaryChatEnabled.set(false);
 		}
 
-		chat = await getChatById(localStorage.token, $chatId).catch(async (error) => {
-			await goto('/');
-			return null;
-		});
+		const loadedChat = await getChatById(localStorage.token, requestedChatId).catch(
+			async (error) => {
+				if (requestId === navigationRequestId) {
+					await goto('/');
+				}
+				return null;
+			}
+		);
 
-		if (chat) {
-			tags = await getTagsById(localStorage.token, $chatId).catch(async (error) => {
+		if (requestId !== navigationRequestId || requestedChatId !== chatIdProp) {
+			return false;
+		}
+
+		if (loadedChat) {
+			chat = loadedChat;
+			tags = await getTagsById(localStorage.token, requestedChatId).catch(async (error) => {
 				return [];
 			});
+
+			if (requestId !== navigationRequestId || requestedChatId !== chatIdProp) {
+				return false;
+			}
 
 			const chatContent = chat.chat;
 
 			if (chatContent) {
-				console.log(chatContent);
-
 				selectedModels =
 					(chatContent?.models ?? undefined) !== undefined
 						? chatContent.models
@@ -1423,9 +1476,15 @@
 					}
 				}
 
-				const taskRes = await getTaskIdsByChatId(localStorage.token, $chatId).catch((error) => {
-					return null;
-				});
+				const taskRes = await getTaskIdsByChatId(localStorage.token, requestedChatId).catch(
+					(error) => {
+						return null;
+					}
+				);
+
+				if (requestId !== navigationRequestId || requestedChatId !== chatIdProp) {
+					return false;
+				}
 
 				if (taskRes) {
 					taskIds = taskRes.task_ids;
@@ -1463,26 +1522,6 @@
 
 	let scrollRAF = null;
 	let contentsRAF = null;
-	let autoScrollRAF: number | null = null;
-
-	const updateAutoScroll = () => {
-		autoScrollRAF = null;
-		if (!messagesContainerElement) {
-			return;
-		}
-
-		autoScroll =
-			messagesContainerElement.scrollHeight - messagesContainerElement.scrollTop <=
-			messagesContainerElement.clientHeight + 5;
-	};
-
-	const handleMessagesScroll = () => {
-		if (autoScrollRAF !== null) {
-			return;
-		}
-
-		autoScrollRAF = requestAnimationFrame(updateAutoScroll);
-	};
 
 	const scheduleScrollToBottom = () => {
 		if (!scrollRAF) {
@@ -1498,9 +1537,6 @@
 	onDestroy(() => {
 		if (scrollRAF) {
 			cancelAnimationFrame(scrollRAF);
-		}
-		if (autoScrollRAF !== null) {
-			cancelAnimationFrame(autoScrollRAF);
 		}
 		if (contentsRAF) {
 			clearTimeout(contentsRAF);
@@ -2423,7 +2459,7 @@
 						$user?.email
 					)
 				},
-				hermes_runtime: hermesRuntime,
+				...(isHermesRuntimeSelected ? { hermes_runtime: hermesRuntime } : {}),
 				model_item: $models.find((m) => m.id === model.id),
 
 				session_id: $socket?.id,
@@ -2993,7 +3029,6 @@
 								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
 								id="messages-container"
 								bind:this={messagesContainerElement}
-								on:scroll={handleMessagesScroll}
 							>
 								<div class=" h-full w-full flex flex-col">
 									<Messages
@@ -3028,6 +3063,7 @@
 									{taskIds}
 									bind:selectedModels
 									bind:hermesRuntime
+									{isHermesRuntimeSelected}
 									bind:files
 									bind:prompt
 									bind:autoScroll
@@ -3109,6 +3145,7 @@
 									{history}
 									bind:selectedModels
 									bind:hermesRuntime
+									{isHermesRuntimeSelected}
 									bind:messageInput
 									bind:files
 									bind:prompt
