@@ -68,12 +68,34 @@ storage_maintenance() {
   fi
 }
 
+pull_image_with_retry() {
+  local image="$1"
+  local max_attempts="${OPENWEBUI_TEST_PULL_ATTEMPTS:-3}"
+  local attempt=1
+
+  while (( attempt <= max_attempts )); do
+    if docker pull "$image"; then
+      return 0
+    fi
+
+    if (( attempt == max_attempts )); then
+      echo "Failed to pull $image after $max_attempts attempts" >&2
+      return 1
+    fi
+
+    echo "Docker pull failed for $image; pruning dangling image data before retry $((attempt + 1))/$max_attempts" >&2
+    docker image prune -f >/dev/null 2>&1 || true
+    sleep $((attempt * 5))
+    attempt=$((attempt + 1))
+  done
+}
+
 storage_maintenance preflight
 
 echo "Preparing $IMAGE_NAME:$SHORT_SHA and $IMAGE_NAME:$IMAGE_TAG from $BRANCH_NAME @ $SHORT_SHA"
 if [[ -n "${OPENWEBUI_TEST_IMAGE:-}" ]]; then
   echo "Using off-host built image for test deploy: $OPENWEBUI_TEST_IMAGE"
-  docker pull "$OPENWEBUI_TEST_IMAGE"
+  pull_image_with_retry "$OPENWEBUI_TEST_IMAGE"
   docker tag "$OPENWEBUI_TEST_IMAGE" "$IMAGE_NAME:$SHORT_SHA"
   docker tag "$OPENWEBUI_TEST_IMAGE" "$IMAGE_NAME:$IMAGE_TAG"
 elif [[ "${ALLOW_LOCAL_TEST_BUILD:-}" == "1" ]]; then
